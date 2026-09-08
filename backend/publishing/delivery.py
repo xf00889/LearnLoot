@@ -39,9 +39,9 @@ def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _target_fingerprint(chat_id: str) -> str:
+def _target_fingerprint(channel_id: str) -> str:
     key = str(settings.SECRET_KEY).encode("utf-8")
-    return hmac.new(key, chat_id.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(key, channel_id.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _result(
@@ -73,7 +73,7 @@ def _load_queue_item(queue_item_id: int) -> PublicationQueueItem:
         raise ValueError("publication queue item does not exist") from exc
 
 
-def _snapshot_defaults(queue_item: PublicationQueueItem, *, chat_id: str, public_base_url: str):
+def _snapshot_defaults(queue_item: PublicationQueueItem, *, channel_id: str, public_base_url: str):
     course = queue_item.course
     landing_url = build_course_landing_url(course, public_base_url=public_base_url)
     message_text = render_telegram_course_message(course, landing_url=landing_url)
@@ -82,7 +82,7 @@ def _snapshot_defaults(queue_item: PublicationQueueItem, *, chat_id: str, public
         "message_text": message_text,
         "landing_url": landing_url,
         "payload_sha256": _sha256(message_text),
-        "target_fingerprint": _target_fingerprint(chat_id),
+        "target_fingerprint": _target_fingerprint(channel_id),
     }
 
 
@@ -90,7 +90,7 @@ def _claim_delivery(
     queue_item_id: int,
     *,
     task_id: str,
-    chat_id: str,
+    channel_id: str,
     public_base_url: str,
 ) -> tuple[PublicationQueueItem, TelegramPost, TelegramDeliveryResult | None]:
     now = timezone.now()
@@ -142,7 +142,7 @@ def _claim_delivery(
                 queue_item=queue_item,
                 **_snapshot_defaults(
                     queue_item,
-                    chat_id=chat_id,
+                    channel_id=channel_id,
                     public_base_url=public_base_url,
                 ),
             )
@@ -196,7 +196,7 @@ def _claim_delivery(
                 attempts=post.attempts,
             )
 
-        if post.target_fingerprint != _target_fingerprint(chat_id):
+        if post.target_fingerprint != _target_fingerprint(channel_id):
             post.status = TelegramPost.Status.FAILED
             post.last_error = (
                 "Configured Telegram target changed after this post was prepared. "
@@ -426,7 +426,7 @@ def attempt_telegram_delivery(
     queue_item, post, early = _claim_delivery(
         queue_item_id,
         task_id=task_id,
-        chat_id=config.chat_id,
+        channel_id=config.channel_id,
         public_base_url=config.public_base_url,
     )
     if early is not None:
@@ -554,7 +554,7 @@ def requeue_failed_telegram_delivery(
         # public-base-url change to take effect.
         defaults = _snapshot_defaults(
             queue_item,
-            chat_id=config.chat_id,
+            channel_id=config.channel_id,
             public_base_url=config.public_base_url,
         )
         post.status = TelegramPost.Status.PENDING

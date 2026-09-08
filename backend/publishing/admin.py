@@ -126,19 +126,19 @@ class PublicationQueueItemAdmin(admin.ModelAdmin):
     @admin.display(description="Telegram message id")
     def telegram_message_id(self, obj):
         try:
-            return obj.telegram_post.telegram_message_id or "â€”"
+            return obj.telegram_post.telegram_message_id or "Ã¢â‚¬â€"
         except TelegramPost.DoesNotExist:
-            return "â€”"
+            return "Ã¢â‚¬â€"
 
     @admin.action(
-        description="Publish selected queued items to Telegram",
+        description="Publish selected queued items to Telegram channel",
         permissions=["change"],
     )
     def publish_selected_queued_items(self, request, queryset):
         if not telegram_publication_enabled():
             self.message_user(
                 request,
-                "Telegram publication is disabled. No tasks were queued.",
+                "Telegram channel publication is disabled. No tasks were queued.",
                 level=messages.WARNING,
             )
             return
@@ -153,12 +153,12 @@ class PublicationQueueItemAdmin(admin.ModelAdmin):
 
         self.message_user(
             request,
-            f"Queued {len(queued)} Telegram publication task(s).",
+            f"Queued {len(queued)} Telegram channel publication task(s).",
             level=messages.SUCCESS,
         )
 
     @admin.action(
-        description="Retry selected known-failed Telegram deliveries",
+        description="Retry selected known-failed Telegram channel deliveries",
         permissions=["change"],
     )
     def retry_known_failed_telegram_items(self, request, queryset):
@@ -173,13 +173,13 @@ class PublicationQueueItemAdmin(admin.ModelAdmin):
 
         self.message_user(
             request,
-            f"Requeued {retried} known-failed Telegram delivery item(s).",
+            f"Requeued {retried} known-failed Telegram channel delivery item(s).",
             level=messages.SUCCESS if retried else messages.WARNING,
         )
 
     @admin.action(
         description=(
-            "Requeue selected ambiguous Telegram deliveries AFTER manual "
+            "Requeue selected ambiguous Telegram channel deliveries AFTER manual "
             "channel verification"
         ),
         permissions=["change"],
@@ -197,7 +197,7 @@ class PublicationQueueItemAdmin(admin.ModelAdmin):
         self.message_user(
             request,
             (
-                f"Requeued {retried} ambiguous/failed Telegram delivery item(s). "
+                f"Requeued {retried} ambiguous/failed Telegram channel delivery item(s). "
                 "This action assumes the channel was manually checked first."
             ),
             level=messages.WARNING if retried else messages.INFO,

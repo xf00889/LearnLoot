@@ -70,17 +70,34 @@ Telegram messages; delivery and retry behavior are reserved for Phase 7.
 Django admin exposes current eligibility, override state, queue history, and
 manual queue/evaluation actions.
 
-## Phase 7 Telegram publication delivery
+## Phase 7 Telegram channel publication
 
-Phase 7 consumes `publication_queue` through Celery and records Telegram
-delivery state, attempt counts, timestamps, and the sent message id in
-`telegram_posts`. Telegram publication is disabled by default. Set
-`LEARNLOOT_TELEGRAM_ENABLED=true` only after configuring the bot token, target
-chat/channel, and `LEARNLOOT_PUBLIC_BASE_URL`.
+LearnLoot publishes selected course deals to a **Telegram channel** so followers
+receive new-deal alerts and the posts drive traffic back to LearnLoot. The
+channel is the audience/distribution destination. A Telegram bot is still used
+as the official automation credential/API client; it is not the destination.
 
-Telegram messages link to the LearnLoot landing route
-`/courses/<provider-slug>/<course-slug>` rather than linking directly to the
-provider. The public frontend for that route is implemented in a later phase.
+Setup:
+
+1. Create or choose the Telegram channel you want people to follow.
+2. Create a Telegram bot for automation and keep its token secret.
+3. Add that bot as an administrator of the channel with permission to post
+   messages.
+4. Set `LEARNLOOT_TELEGRAM_CHANNEL_ID` to the public channel username such as
+   `@your_channel`, or to the numeric channel id when appropriate.
+5. Set `LEARNLOOT_PUBLIC_BASE_URL` to the public LearnLoot website URL.
+6. Keep `LEARNLOOT_TELEGRAM_ENABLED=false` until the channel setup is verified,
+   then enable it when you are ready for automated posts.
+
+Phase 7 consumes `publication_queue` through Celery and records Telegram channel
+delivery state, attempt counts, timestamps, and the returned message id in
+`telegram_posts`.
+
+Posts link to the LearnLoot landing route
+`/courses/<provider-slug>/<course-slug>` rather than linking directly to Udemy.
+This keeps Telegram as a traffic-acquisition channel while the website remains
+the owned SEO/analytics asset. Phase 8 implements the public frontend route and
+its social/Open Graph presentation.
 
 Delivery performs a fresh Phase 6 eligibility check immediately before sending.
 If a course became paid, hidden, archived, stale, or otherwise ineligible, its
@@ -94,6 +111,11 @@ LearnLoot does not automatically retry those failures; it records them as
 Ambiguous so an operator can verify the channel first. Explicit flood-control
 responses (`retry_after`) use bounded Celery retry/backoff.
 
-No bot token or raw Telegram destination is stored in the database. Delivery
+No bot token or raw channel destination is stored in the database. Delivery
 records store only a keyed SHA-256 target fingerprint, rendered message snapshot,
 LearnLoot landing URL, message id, attempts, timestamps, and sanitized errors.
+
+At the Telegram Bot API transport layer the destination field is still named
+`chat_id`; Telegram uses that same API parameter for channels. LearnLoot exposes
+the application setting as `LEARNLOOT_TELEGRAM_CHANNEL_ID` so the product
+configuration reflects the actual destination.

@@ -213,8 +213,10 @@ LEARNLOOT_PUBLICATION_COOLDOWN_HOURS = env.int(
     default=168,
 )
 
-# Telegram publication delivery. Disabled by default so tests, development,
-# migrations, and admin inspection never send real messages accidentally.
+# Telegram channel publication. The destination is a Telegram channel; a bot
+# token is used only as the official Bot API publishing credential. Disabled by
+# default so tests, development, migrations, and admin inspection never send
+# real channel posts accidentally.
 LEARNLOOT_TELEGRAM_ENABLED = env.bool(
     "LEARNLOOT_TELEGRAM_ENABLED",
     default=False,
@@ -223,9 +225,9 @@ LEARNLOOT_TELEGRAM_BOT_TOKEN = env.str(
     "LEARNLOOT_TELEGRAM_BOT_TOKEN",
     default="",
 )
-LEARNLOOT_TELEGRAM_CHAT_ID = env.str(
-    "LEARNLOOT_TELEGRAM_CHAT_ID",
-    default="",
+LEARNLOOT_TELEGRAM_CHANNEL_ID = env.str(
+    "LEARNLOOT_TELEGRAM_CHANNEL_ID",
+    default=env.str("LEARNLOOT_TELEGRAM_CHAT_ID", default=""),
 )
 LEARNLOOT_TELEGRAM_API_BASE_URL = env.str(
     "LEARNLOOT_TELEGRAM_API_BASE_URL",

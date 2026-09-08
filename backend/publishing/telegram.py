@@ -44,7 +44,7 @@ class TelegramAmbiguousError(TelegramDeliveryError):
 class TelegramConfig:
     enabled: bool
     bot_token: str
-    chat_id: str
+    channel_id: str
     api_base_url: str
     timeout_seconds: float
     max_retries: int
@@ -62,7 +62,7 @@ def get_telegram_config() -> TelegramConfig:
     return TelegramConfig(
         enabled=bool(settings.LEARNLOOT_TELEGRAM_ENABLED),
         bot_token=str(settings.LEARNLOOT_TELEGRAM_BOT_TOKEN).strip(),
-        chat_id=str(settings.LEARNLOOT_TELEGRAM_CHAT_ID).strip(),
+        channel_id=str(settings.LEARNLOOT_TELEGRAM_CHANNEL_ID).strip(),
         api_base_url=str(settings.LEARNLOOT_TELEGRAM_API_BASE_URL).rstrip("/"),
         timeout_seconds=float(settings.LEARNLOOT_TELEGRAM_TIMEOUT_SECONDS),
         max_retries=max(int(settings.LEARNLOOT_TELEGRAM_MAX_RETRIES), 0),
@@ -81,8 +81,8 @@ def validate_telegram_config(config: TelegramConfig) -> None:
         return
     if not config.bot_token:
         raise TelegramConfigurationError("Telegram bot token is not configured.")
-    if not config.chat_id:
-        raise TelegramConfigurationError("Telegram chat id is not configured.")
+    if not config.channel_id:
+        raise TelegramConfigurationError("Telegram channel id is not configured.")
     if not config.api_base_url.startswith("https://"):
         raise TelegramConfigurationError("Telegram API base URL must use HTTPS.")
     if not config.public_base_url.startswith(("https://", "http://")):
@@ -128,33 +128,33 @@ def render_telegram_course_message(
     instructor = escape(course.instructor_name.strip()[:180]) if course.instructor_name else ""
 
     lines = [
-        f"ðŸŽ“ <b>{title}</b>",
-        "ðŸ”¥ <b>FREE COURSE</b>",
+        f"Ã°Å¸Å½â€œ <b>{title}</b>",
+        "Ã°Å¸â€Â¥ <b>FREE COURSE</b>",
         "",
     ]
 
     rating = _format_rating(course)
     if rating is not None and course.review_count is not None:
-        lines.append(f"â­ {escape(rating)}/5 Â· {course.review_count:,} reviews")
+        lines.append(f"Ã¢Â­Â {escape(rating)}/5 Ã‚Â· {course.review_count:,} reviews")
     elif rating is not None:
-        lines.append(f"â­ {escape(rating)}/5")
+        lines.append(f"Ã¢Â­Â {escape(rating)}/5")
     elif course.review_count is not None:
-        lines.append(f"â­ {course.review_count:,} reviews")
+        lines.append(f"Ã¢Â­Â {course.review_count:,} reviews")
 
     if instructor:
-        lines.append(f"ðŸ‘¤ {instructor}")
+        lines.append(f"Ã°Å¸â€˜Â¤ {instructor}")
 
     duration = _format_duration(course.duration_minutes)
     if duration is not None:
-        lines.append(f"â± {escape(duration)}")
+        lines.append(f"Ã¢ÂÂ± {escape(duration)}")
 
     if provider_name:
-        lines.append(f"ðŸ« {provider_name}")
+        lines.append(f"Ã°Å¸ÂÂ« {provider_name}")
 
     lines.extend(
         [
             "",
-            f'ðŸ‘‰ <a href="{escape(landing_url, quote=True)}">View on LearnLoot</a>',
+            f'Ã°Å¸â€˜â€° <a href="{escape(landing_url, quote=True)}">View on LearnLoot</a>',
         ]
     )
 
@@ -168,13 +168,13 @@ def _sanitize_error(
     value: object,
     *,
     bot_token: str,
-    chat_id: str,
+    channel_id: str,
 ) -> str:
     text = str(value or "").strip()
     if bot_token:
         text = text.replace(bot_token, "[REDACTED_TOKEN]")
-    if chat_id:
-        text = text.replace(chat_id, "[REDACTED_CHAT]")
+    if channel_id:
+        text = text.replace(channel_id, "[REDACTED_CHANNEL]")
     return text[:1000] or "Telegram request failed."
 
 
@@ -192,7 +192,7 @@ def _raise_api_error(
     payload: dict,
     *,
     bot_token: str,
-    chat_id: str,
+    channel_id: str,
     fallback_code: int | None = None,
 ) -> None:
     code_value = payload.get("error_code", fallback_code or 0)
@@ -204,7 +204,7 @@ def _raise_api_error(
     description = _sanitize_error(
         payload.get("description", "Telegram API rejected the request."),
         bot_token=bot_token,
-        chat_id=chat_id,
+        channel_id=channel_id,
     )
     parameters = payload.get("parameters")
     retry_after = None
@@ -231,6 +231,7 @@ def _raise_api_error(
 
 
 class TelegramBotClient:
+    """Bot API transport used to publish posts into the configured channel."""
     def __init__(
         self,
         config: TelegramConfig,
@@ -250,7 +251,7 @@ class TelegramBotClient:
         )
         body = urlencode(
             {
-                "chat_id": self.config.chat_id,
+                "chat_id": self.config.channel_id,
                 "text": text,
                 "parse_mode": "HTML",
             }
@@ -262,7 +263,7 @@ class TelegramBotClient:
             headers={
                 "Content-Type": "application/x-www-form-urlencoded",
                 "Accept": "application/json",
-                "User-Agent": "LearnLootBot/0.1",
+                "User-Agent": "LearnLootTelegramPublisher/0.1",
             },
         )
 
@@ -298,7 +299,7 @@ class TelegramBotClient:
             _raise_api_error(
                 payload,
                 bot_token=self.config.bot_token,
-                chat_id=self.config.chat_id,
+                channel_id=self.config.channel_id,
                 fallback_code=exc.code,
             )
             raise AssertionError("unreachable")
@@ -306,7 +307,7 @@ class TelegramBotClient:
             safe = _sanitize_error(
                 exc,
                 bot_token=self.config.bot_token,
-                chat_id=self.config.chat_id,
+                channel_id=self.config.channel_id,
             )
             raise TelegramAmbiguousError(
                 f"Telegram network failure with ambiguous delivery outcome: {safe}"
@@ -322,7 +323,7 @@ class TelegramBotClient:
             _raise_api_error(
                 payload,
                 bot_token=self.config.bot_token,
-                chat_id=self.config.chat_id,
+                channel_id=self.config.channel_id,
             )
 
         result = payload.get("result")

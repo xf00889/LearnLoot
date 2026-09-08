@@ -46,7 +46,7 @@ from publishing.telegram import (
 TELEGRAM_SETTINGS = {
     "LEARNLOOT_TELEGRAM_ENABLED": True,
     "LEARNLOOT_TELEGRAM_BOT_TOKEN": "test-token-never-real",
-    "LEARNLOOT_TELEGRAM_CHAT_ID": "@learnloot_test",
+    "LEARNLOOT_TELEGRAM_CHANNEL_ID": "@learnloot_test",
     "LEARNLOOT_TELEGRAM_API_BASE_URL": "https://api.telegram.org",
     "LEARNLOOT_TELEGRAM_TIMEOUT_SECONDS": 5.0,
     "LEARNLOOT_TELEGRAM_MAX_RETRIES": 3,
@@ -142,7 +142,7 @@ def telegram_config():
     return TelegramConfig(
         enabled=True,
         bot_token="secret-test-token",
-        chat_id="@test_channel",
+        channel_id="@test_channel",
         api_base_url="https://api.telegram.org",
         timeout_seconds=5.0,
         max_retries=3,
@@ -194,6 +194,15 @@ def test_bot_client_posts_send_message_and_parses_message_id():
     assert captured["timeout"] == 5.0
 
 
+def test_channel_destination_setting_is_used_while_bot_api_keeps_chat_id_parameter():
+    config = telegram_config()
+
+    assert config.channel_id == "@test_channel"
+    # Telegram Bot API calls the destination parameter "chat_id" even when the
+    # destination is a channel; LearnLoot keeps channel semantics at app level.
+    assert not hasattr(config, "chat_id")
+
+
 def test_bot_client_uses_retry_after_for_explicit_flood_control():
     payload = {
         "ok": False,
@@ -219,12 +228,12 @@ def test_bot_client_uses_retry_after_for_explicit_flood_control():
     assert exc.value.retry_after == 23
 
 
-def test_bot_client_never_leaks_token_or_chat_id_in_network_error():
+def test_bot_client_never_leaks_token_or_channel_id_in_network_error():
     config = telegram_config()
 
     def opener(request, timeout):
         raise URLError(
-            f"failure for {config.bot_token} and {config.chat_id}"
+            f"failure for {config.bot_token} and {config.channel_id}"
         )
 
     client = TelegramBotClient(config, opener=opener)
@@ -234,9 +243,9 @@ def test_bot_client_never_leaks_token_or_chat_id_in_network_error():
 
     message = str(exc.value)
     assert config.bot_token not in message
-    assert config.chat_id not in message
+    assert config.channel_id not in message
     assert "[REDACTED_TOKEN]" in message
-    assert "[REDACTED_CHAT]" in message
+    assert "[REDACTED_CHANNEL]" in message
 
 
 @pytest.mark.django_db
@@ -274,6 +283,26 @@ def test_missing_credentials_leave_queue_available_for_later_configuration(queue
     result = attempt_telegram_delivery(
         queued_item.pk,
         task_id="task-no-config",
+        client=SuccessfulClient(),
+    )
+
+    queued_item.refresh_from_db()
+    assert result.status == "configuration_error"
+    assert queued_item.status == PublicationQueueItem.Status.QUEUED
+    assert queued_item.attempts == 0
+
+
+@pytest.mark.django_db
+@override_settings(
+    **{
+        **TELEGRAM_SETTINGS,
+        "LEARNLOOT_TELEGRAM_CHANNEL_ID": "",
+    }
+)
+def test_missing_channel_destination_leaves_queue_available_for_configuration(queued_item):
+    result = attempt_telegram_delivery(
+        queued_item.pk,
+        task_id="task-no-channel",
         client=SuccessfulClient(),
     )
 
