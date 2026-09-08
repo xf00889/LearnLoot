@@ -34,6 +34,41 @@ RENDERED_FIXTURE = """
 """
 
 
+
+LIVE_STYLE_RENDERED_FIXTURE = """
+<html>
+  <body>
+    <article class="course-card">
+      <a
+        href="/course/manageyourtime/"
+        aria-label="A Mini Course on Time Management 7 steps you can use immediately to become more productive and master time management Rating: 4.4 out of 5 55847 reviews 0.5 total hours 12 lectures All Levels"
+      >
+        <span data-purpose="course-title-url">A Mini Course on Time Management</span>
+        <span>
+          7 steps you can use immediately to become more productive and master time management
+        </span>
+        <span aria-label="Rating: 4.4 out of 5">4.4</span>
+        <span>55847 reviews</span>
+        <span>0.5 total hours</span>
+        <span>12 lectures</span>
+        <span>All Levels</span>
+      </a>
+    </article>
+  </body>
+</html>
+"""
+
+
+def live_style_rendered_response():
+    url = "https://www.udemy.com/courses/free/?p=1"
+    return HtmlResponse(
+        url=url,
+        request=Request(url=url),
+        body=LIVE_STYLE_RENDERED_FIXTURE.encode(),
+        encoding="utf-8",
+    )
+
+
 def rendered_response(url="https://www.udemy.com/courses/free/?p=1"):
     request = Request(url=url)
     return HtmlResponse(
@@ -84,6 +119,76 @@ def test_rendered_course_extractor_finds_and_deduplicates_cards():
     second = records[1]
     assert second["id"] == "slug:javascript-basics"
     assert second["identity_kind"] == "slug"
+
+
+def test_live_style_course_title_excludes_card_summary_metadata():
+    records = extract_udemy_free_records(live_style_rendered_response())
+
+    assert len(records) == 1
+    record = records[0]
+    assert record["title"] == "A Mini Course on Time Management"
+    assert "Rating:" not in record["title"]
+    assert "55847 reviews" not in record["title"]
+    assert "lectures" not in record["title"]
+    assert record["avg_rating"] == "4.4"
+    assert record["num_reviews"] == 55847
+
+
+def test_summary_like_anchor_label_falls_back_to_clean_slug_title():
+    html = """
+    <html>
+      <body>
+        <article class="course-card">
+          <a
+            href="/course/code-your-first-game/"
+            aria-label="Code Your First Game Learn JavaScript Rating: 4.4 out of 5 29150 reviews 2 total hours 12 lectures Beginner"
+          >
+            Code Your First Game Learn JavaScript Rating: 4.4 out of 5
+            29150 reviews 2 total hours 12 lectures Beginner
+          </a>
+        </article>
+      </body>
+    </html>
+    """
+    url = "https://www.udemy.com/courses/free/?p=1"
+    response = HtmlResponse(
+        url=url,
+        request=Request(url=url),
+        body=html.encode(),
+        encoding="utf-8",
+    )
+
+    records = extract_udemy_free_records(response)
+
+    assert len(records) == 1
+    assert records[0]["title"] == "Code Your First Game"
+    assert "Rating:" not in records[0]["title"]
+
+
+def test_legitimate_short_title_with_beginner_word_is_not_rejected():
+    html = """
+    <html>
+      <body>
+        <article class="course-card">
+          <a href="/course/beginner-python/" aria-label="Beginner Python">
+            Beginner Python
+          </a>
+        </article>
+      </body>
+    </html>
+    """
+    url = "https://www.udemy.com/courses/free/?p=1"
+    response = HtmlResponse(
+        url=url,
+        request=Request(url=url),
+        body=html.encode(),
+        encoding="utf-8",
+    )
+
+    records = extract_udemy_free_records(response)
+
+    assert len(records) == 1
+    assert records[0]["title"] == "Beginner Python"
 
 
 def test_spider_builds_bounded_playwright_request():

@@ -62,8 +62,10 @@ class Command(BaseCommand):
                 validate_course(normalized)
                 validated += 1
                 self.stdout.write(
-                    f"{normalized.external_id}: {normalized.title} -> "
-                    f"{normalized.canonical_url}"
+                    f"{normalized.external_id}: {normalized.title} | "
+                    f"rating={normalized.rating or 'n/a'} | "
+                    f"reviews={normalized.review_count if normalized.review_count is not None else 'n/a'} "
+                    f"-> {normalized.canonical_url}"
                 )
                 if validated >= limit:
                     break

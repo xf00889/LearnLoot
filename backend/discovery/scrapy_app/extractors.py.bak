@@ -54,29 +54,76 @@ def _nearest_card(anchor: Selector) -> Selector:
     return fallback if fallback else anchor
 
 
-def _title(anchor: Selector, card: Selector) -> str:
-    direct = (
-        anchor.attrib.get("aria-label")
-        or anchor.attrib.get("title")
-        or ""
-    ).strip()
-    if direct:
-        return _clean_text([direct])
+def _looks_like_card_summary(value: str) -> bool:
+    normalized = " ".join(value.split())
+    lowered = normalized.lower()
 
+    strong_patterns = (
+        r"\brating:\s*[0-5](?:\.\d{1,2})?\b",
+        r"\b[0-5](?:\.\d{1,2})?\s+out of 5\b",
+        r"\b\d[\d,]*\s+(?:ratings?|reviews?)\b",
+        r"\b\d+(?:\.\d+)?\s+total hours?\b",
+        r"\b\d+(?:\.\d+)?\s+total mins?\b",
+        r"\b\d[\d,]*\s+lectures?\b",
+    )
+    if any(re.search(pattern, lowered) for pattern in strong_patterns):
+        return True
+
+    return bool(
+        re.search(
+            r"\b(?:all levels|beginner|intermediate|expert)\s*$",
+            lowered,
+        )
+        and len(normalized) > 120
+    )
+
+
+def _slug_title(slug: str) -> str:
+    words = [part for part in slug.replace("_", "-").split("-") if part]
+    return " ".join(word.capitalize() for word in words)
+
+
+def _title(anchor: Selector, card: Selector, slug: str) -> str:
+    # Prefer semantic title hooks. Udemy may use a larger clickable card whose
+    # aria-label contains headline, rating, reviews, duration and level.
     selectors = (
-        "[data-purpose*='course-title'] *::text",
-        "[data-purpose*='course-title']::text",
+        "[data-purpose='course-title-url'] *::text",
+        "[data-purpose='course-title-url']::text",
+        "[data-purpose='course-title'] *::text",
+        "[data-purpose='course-title']::text",
+        "[data-testid='course-card-title'] *::text",
+        "[data-testid='course-card-title']::text",
+    )
+    for query in selectors:
+        value = _clean_text(card.css(query).getall())
+        if value and not _looks_like_card_summary(value):
+            return value
+
+    direct = _clean_text(
+        [
+            anchor.attrib.get("aria-label")
+            or anchor.attrib.get("title")
+            or ""
+        ]
+    )
+    if direct and not _looks_like_card_summary(direct):
+        return direct
+
+    # Some layouts expose a clean heading without the dedicated data-purpose
+    # hook. Reject heading text if it has expanded into a full card summary.
+    for query in (
         "h3 *::text",
         "h3::text",
         "h2 *::text",
         "h2::text",
-    )
-    for query in selectors:
+    ):
         value = _clean_text(card.css(query).getall())
-        if value:
+        if value and not _looks_like_card_summary(value):
             return value
 
-    return _clean_text(anchor.xpath(".//text()").getall())
+    # Never persist an entire rendered card as the canonical title. The course
+    # slug is stable enough for a conservative last-resort display label.
+    return _slug_title(slug)
 
 
 def _external_id(anchor: Selector, slug: str) -> tuple[str, str]:
@@ -164,7 +211,7 @@ def extract_udemy_free_records(response) -> list[dict]:
             continue
 
         card = _nearest_card(anchor)
-        title = _title(anchor, card)
+        title = _title(anchor, card, slug)
         if not title:
             continue
 
