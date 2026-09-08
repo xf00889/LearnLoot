@@ -7,11 +7,17 @@ from typing import Any
 from django.conf import settings
 from django.db.models import F, Prefetch, Q, QuerySet
 from django.http import Http404, HttpRequest, JsonResponse
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
 from pricing.models import CoursePrice
 from providers.models import Provider
+from tracking.models import AffiliateLink
+from tracking.services import (
+    OutboundDestinationError,
+    resolve_outbound_destination,
+)
 
 from .models import Course
 
@@ -38,6 +44,9 @@ def _freshness_cutoff():
 
 def _base_course_queryset() -> QuerySet[Course]:
     latest_prices = CoursePrice.objects.order_by("-observed_at", "-id")
+    active_affiliate_links = AffiliateLink.objects.filter(
+        status=AffiliateLink.Status.ACTIVE
+    ).order_by("-updated_at", "-id")
     return (
         Course.objects.filter(
             status=Course.Status.ACTIVE,
@@ -48,7 +57,12 @@ def _base_course_queryset() -> QuerySet[Course]:
         )
         .select_related("provider", "publication_eligibility")
         .prefetch_related(
-            Prefetch("prices", queryset=latest_prices, to_attr="public_prices")
+            Prefetch("prices", queryset=latest_prices, to_attr="public_prices"),
+            Prefetch(
+                "affiliate_links",
+                queryset=active_affiliate_links,
+                to_attr="public_affiliate_links",
+            ),
         )
         .order_by(
             "-publication_eligibility__score",
@@ -78,6 +92,17 @@ def _public_course_url(course: Course) -> str:
     return f"{base_url}{path}" if base_url else path
 
 
+def _outbound_url(request: HttpRequest, course: Course) -> str:
+    path = reverse(
+        "tracking:outbound-redirect",
+        kwargs={
+            "provider_slug": course.provider.slug,
+            "course_slug": course.slug,
+        },
+    )
+    return request.build_absolute_uri(path)
+
+
 def _price_payload(price: CoursePrice | None) -> dict[str, Any] | None:
     if price is None:
         return None
@@ -90,9 +115,10 @@ def _price_payload(price: CoursePrice | None) -> dict[str, Any] | None:
     }
 
 
-def _course_summary(course: Course) -> dict[str, Any]:
+def _course_summary(request: HttpRequest, course: Course) -> dict[str, Any]:
     price = _latest_price(course)
     eligibility = course.publication_eligibility
+    destination = resolve_outbound_destination(course)
     return {
         "id": course.id,
         "provider": {
@@ -102,7 +128,8 @@ def _course_summary(course: Course) -> dict[str, Any]:
         "title": course.title,
         "slug": course.slug,
         "url": _public_course_url(course),
-        "provider_url": course.canonical_url,
+        "outbound_url": _outbound_url(request, course),
+        "outbound_is_affiliate": destination.is_affiliate,
         "thumbnail_url": course.thumbnail_url,
         "instructor_name": course.instructor_name,
         "rating": str(course.rating) if course.rating is not None else None,
@@ -117,8 +144,8 @@ def _course_summary(course: Course) -> dict[str, Any]:
     }
 
 
-def _course_detail(course: Course) -> dict[str, Any]:
-    payload = _course_summary(course)
+def _course_detail(request: HttpRequest, course: Course) -> dict[str, Any]:
+    payload = _course_summary(request, course)
     payload.update(
         {
             "description": course.description,
@@ -145,31 +172,19 @@ def _visible_public_courses(request: HttpRequest) -> list[Course]:
 
     courses: list[Course] = []
     for course in queryset[: MAX_LIMIT * 2]:
-        if _is_latest_price_free(_latest_price(course)):
-            courses.append(course)
+        if not _is_latest_price_free(_latest_price(course)):
+            continue
+        try:
+            resolve_outbound_destination(course)
+        except OutboundDestinationError:
+            continue
+        courses.append(course)
         if len(courses) >= _limit_from_request(request):
             break
     return courses
 
 
-@require_GET
-def public_course_list(request: HttpRequest) -> JsonResponse:
-    courses = _visible_public_courses(request)
-    return JsonResponse(
-        {
-            "generated_at": timezone.now().isoformat(),
-            "count": len(courses),
-            "results": [_course_summary(course) for course in courses],
-        }
-    )
-
-
-@require_GET
-def public_course_detail(
-    request: HttpRequest,
-    provider_slug: str,
-    course_slug: str,
-) -> JsonResponse:
+def get_public_course_or_404(provider_slug: str, course_slug: str) -> Course:
     try:
         course = _base_course_queryset().get(
             provider__slug=provider_slug,
@@ -180,5 +195,30 @@ def public_course_detail(
 
     if not _is_latest_price_free(_latest_price(course)):
         raise Http404("Course is not public")
+    try:
+        resolve_outbound_destination(course)
+    except OutboundDestinationError as exc:
+        raise Http404("Course has no valid outbound destination") from exc
+    return course
 
-    return JsonResponse(_course_detail(course))
+
+@require_GET
+def public_course_list(request: HttpRequest) -> JsonResponse:
+    courses = _visible_public_courses(request)
+    return JsonResponse(
+        {
+            "generated_at": timezone.now().isoformat(),
+            "count": len(courses),
+            "results": [_course_summary(request, course) for course in courses],
+        }
+    )
+
+
+@require_GET
+def public_course_detail(
+    request: HttpRequest,
+    provider_slug: str,
+    course_slug: str,
+) -> JsonResponse:
+    course = get_public_course_or_404(provider_slug, course_slug)
+    return JsonResponse(_course_detail(request, course))

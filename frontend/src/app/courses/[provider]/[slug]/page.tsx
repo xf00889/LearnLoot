@@ -3,6 +3,25 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCourse } from "@/lib/api";
 
+function firstSearchValue(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function buildAttributedOutboundUrl(
+  outboundUrl: string,
+  searchParams: Record<string, string | string[] | undefined>,
+): string {
+  const url = new URL(outboundUrl);
+  const source = firstSearchValue(searchParams.source).trim();
+  const campaign = firstSearchValue(searchParams.campaign).trim();
+
+  url.searchParams.set("source", source || "course_page");
+  if (campaign) {
+    url.searchParams.set("campaign", campaign);
+  }
+  return url.toString();
+}
+
 export async function generateMetadata({
   params,
 }: PageProps<"/courses/[provider]/[slug]">): Promise<Metadata> {
@@ -36,13 +55,20 @@ export async function generateMetadata({
 
 export default async function CourseDetailPage({
   params,
+  searchParams,
 }: PageProps<"/courses/[provider]/[slug]">) {
   const { provider, slug } = await params;
+  const resolvedSearchParams = await searchParams;
   const course = await getCourse(provider, slug);
 
   if (!course) {
     notFound();
   }
+
+  const outboundUrl = buildAttributedOutboundUrl(
+    course.outbound_url,
+    resolvedSearchParams,
+  );
 
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-12">
@@ -108,13 +134,23 @@ export default async function CourseDetailPage({
             Course availability can change after LearnLoot checks it. Confirm the
             current provider page before enrolling.
           </p>
+          <p className="mt-2 text-sm text-[color:var(--muted)]">
+            LearnLoot records a privacy-minimized outbound click when you continue.
+            {course.outbound_is_affiliate
+              ? " This provider link is an affiliate link and LearnLoot may earn a commission at no extra cost to you."
+              : " Affiliate tracking may be used only when an approved provider program is configured."}
+          </p>
         </div>
 
         <div className="mt-8 flex flex-wrap gap-3">
           <a
             className="rounded-full bg-[color:var(--accent)] px-6 py-3 font-bold text-white hover:bg-[color:var(--accent-strong)]"
-            href={course.provider_url}
-            rel="noopener noreferrer"
+            href={outboundUrl}
+            rel={
+              course.outbound_is_affiliate
+                ? "nofollow sponsored noopener noreferrer"
+                : "nofollow noopener noreferrer"
+            }
             target="_blank"
           >
             Continue to free course

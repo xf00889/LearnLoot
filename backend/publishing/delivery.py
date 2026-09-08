@@ -75,7 +75,10 @@ def _load_queue_item(queue_item_id: int) -> PublicationQueueItem:
 
 def _snapshot_defaults(queue_item: PublicationQueueItem, *, channel_id: str, public_base_url: str):
     course = queue_item.course
-    landing_url = build_course_landing_url(course, public_base_url=public_base_url)
+    landing_url = (
+        build_course_landing_url(course, public_base_url=public_base_url)
+        + "?source=telegram&campaign=channel"
+    )
     message_text = render_telegram_course_message(course, landing_url=landing_url)
     return {
         "status": TelegramPost.Status.PENDING,

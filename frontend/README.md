@@ -31,3 +31,11 @@ URL when you are ready to show follower CTAs.
 
 Telegram channel posts should point to the LearnLoot course landing page rather
 than directly to the provider URL.
+
+## Phase 9 outbound links
+
+Course detail CTAs use the backend-provided `outbound_url` instead of exposing
+the provider URL directly. Query attribution such as `source=telegram` and
+`campaign=channel` is preserved on the tracked redirect. When the backend reports
+an active approved affiliate destination, the CTA shows an affiliate disclosure
+and uses the `sponsored` link relationship.

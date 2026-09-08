@@ -144,3 +144,30 @@ Keep backend `LEARNLOOT_PUBLIC_BASE_URL` aligned with `NEXT_PUBLIC_SITE_URL`
 before enabling real Telegram channel publication. Course detail pages display
 the latest check time and a changing-availability disclaimer before visitors
 continue to the provider.
+
+## Phase 9 outbound tracking and affiliate-ready redirects
+
+Phase 9 routes provider CTAs through the controlled backend endpoint
+`/go/<provider-slug>/<course-slug>/`. The redirect reuses Phase 8 public-course
+safety checks immediately before leaving LearnLoot, resolves an approved active
+affiliate destination when one exists, otherwise falls back to the course's
+validated HTTPS canonical provider URL, records a privacy-minimized click event,
+and then redirects the visitor.
+
+`affiliate_links` is admin-managed. Only one Active affiliate destination may
+exist per course. Activating a link means the operator has reviewed that
+destination for the relevant provider/program requirements; LearnLoot does not
+automatically invent affiliate parameters. Invalid/non-HTTPS affiliate URLs are
+ignored by delivery resolution and invalid canonical destinations fail closed.
+
+`click_events` stores only the course, optional affiliate-link reference,
+destination kind, source, campaign, and timestamp. IP addresses and user-agent
+strings are not persisted. A short configurable cache-only dedupe window reduces
+accidental double-click inflation while still allowing every request to redirect.
+Set `LEARNLOOT_OUTBOUND_CLICK_DEDUPE_SECONDS` to tune or disable that window.
+
+Future Telegram posts include `source=telegram&campaign=channel` on their
+LearnLoot landing URL. The Phase 8 course page carries those attribution values
+forward to `/go/...`; direct catalog visits default to `source=course_page`.
+The frontend no longer receives the raw provider URL from the public API. It
+receives the controlled outbound URL plus an affiliate-disclosure flag instead.

@@ -25,7 +25,8 @@ export type CourseSummary = {
   title: string;
   slug: string;
   url: string;
-  provider_url: string;
+  outbound_url: string;
+  outbound_is_affiliate: boolean;
   thumbnail_url: string;
   instructor_name: string;
   rating: string | null;

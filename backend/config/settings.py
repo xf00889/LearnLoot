@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "pricing",
     "discovery",
     "publishing",
+    "tracking",
 ]
 
 MIDDLEWARE = [
@@ -252,4 +253,11 @@ LEARNLOOT_TELEGRAM_STALE_SEND_MINUTES = env.int(
 LEARNLOOT_PUBLIC_BASE_URL = env.str(
     "LEARNLOOT_PUBLIC_BASE_URL",
     default="http://localhost:3000",
+)
+
+# Outbound click analytics. The short dedupe window reduces accidental double
+# clicks without storing IP addresses or user-agent strings in the database.
+LEARNLOOT_OUTBOUND_CLICK_DEDUPE_SECONDS = env.int(
+    "LEARNLOOT_OUTBOUND_CLICK_DEDUPE_SECONDS",
+    default=2,
 )
