@@ -84,15 +84,35 @@ def _slug_title(slug: str) -> str:
 
 
 def _title(anchor: Selector, card: Selector, slug: str) -> str:
-    # Prefer semantic title hooks. Udemy may use a larger clickable card whose
-    # aria-label contains headline, rating, reviews, duration and level.
+    # Current public Udemy cards place the visible course title as a direct
+    # text node of the link under:
+    #
+    # <h3 data-purpose="course-title-url">
+    #   <a>Visible title<div class="ud-sr-only">SEO metadata...</div></a>
+    # </h3>
+    #
+    # Reading all descendant text would mix title, headline, rating, reviews,
+    # duration, lectures, and level. Prefer only the anchor's direct text node.
+    if anchor.xpath("ancestor::*[@data-purpose='course-title-url'][1]"):
+        value = _clean_text(anchor.xpath("./text()[normalize-space()]").getall())
+        if value and not _looks_like_card_summary(value):
+            return value
+
+    # Retain compatibility with other public card layouts. The earlier
+    # rendered-card shape used by LearnLoot places the semantic title marker
+    # inside the link:
+    #
+    # <a><span data-purpose="course-title-url">Visible title</span>...</a>
+    #
+    # Read only the marker's own direct text so adjacent headline/rating/review
+    # metadata cannot leak into the title.
     selectors = (
-        "[data-purpose='course-title-url'] *::text",
         "[data-purpose='course-title-url']::text",
-        "[data-purpose='course-title'] *::text",
         "[data-purpose='course-title']::text",
-        "[data-testid='course-card-title'] *::text",
+        "[data-purpose='course-title-url'] > a::text",
+        "[data-purpose='course-title'] > a::text",
         "[data-testid='course-card-title']::text",
+        "[data-testid='course-card-title'] > a::text",
     )
     for query in selectors:
         value = _clean_text(card.css(query).getall())
@@ -109,20 +129,13 @@ def _title(anchor: Selector, card: Selector, slug: str) -> str:
     if direct and not _looks_like_card_summary(direct):
         return direct
 
-    # Some layouts expose a clean heading without the dedicated data-purpose
-    # hook. Reject heading text if it has expanded into a full card summary.
-    for query in (
-        "h3 *::text",
-        "h3::text",
-        "h2 *::text",
-        "h2::text",
-    ):
+    for query in ("h3::text", "h2::text"):
         value = _clean_text(card.css(query).getall())
         if value and not _looks_like_card_summary(value):
             return value
 
     # Never persist an entire rendered card as the canonical title. The course
-    # slug is stable enough for a conservative last-resort display label.
+    # slug remains a conservative last-resort display label.
     return _slug_title(slug)
 
 
@@ -154,6 +167,15 @@ def _instructor(card: Selector) -> str:
 
 
 def _rating(card: Selector) -> str | None:
+    # Current public free-course cards expose SEO-only rating metadata as:
+    # <span data-testid="seo-rating">Rating: 4.4 out of 5</span>
+    rating_text = _clean_text(
+        card.css("[data-testid='seo-rating']::text").getall()
+    )
+    match = _RATING_RE.search(rating_text)
+    if match:
+        return match.group(1)
+
     labels = card.xpath(
         ".//@aria-label["
         "contains(translate(., 'RATING', 'rating'), 'rating')"
@@ -173,13 +195,25 @@ def _rating(card: Selector) -> str | None:
 
 
 def _review_count(card: Selector) -> int | None:
+    review_text = _clean_text(
+        card.css("[data-testid='seo-num-reviews']::text").getall()
+    )
+    match = _REVIEW_RE.search(review_text)
+    if match:
+        return int(match.group(1).replace(",", ""))
+
     text = _clean_text(card.xpath(".//text()").getall())
     match = _REVIEW_RE.search(text)
     if not match:
         return None
 
-    digits = match.group(1).replace(",", "")
-    return int(digits)
+    return int(match.group(1).replace(",", ""))
+
+
+def _headline(card: Selector) -> str:
+    return _clean_text(
+        card.css("[data-testid='seo-headline']::text").getall()
+    )
 
 
 def _thumbnail(card: Selector) -> str:
@@ -233,7 +267,7 @@ def extract_udemy_free_records(response) -> list[dict]:
                 "avg_rating": _rating(card),
                 "num_reviews": _review_count(card),
                 "num_subscribers": None,
-                "headline": "",
+                "headline": _headline(card),
                 "is_paid": False,
                 "catalog_kind": "free",
                 "source_url": response.url,

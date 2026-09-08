@@ -69,6 +69,33 @@ def live_style_rendered_response():
     )
 
 
+
+ACTUAL_2026_UDEMY_CARD_FIXTURE = """
+<html>
+  <body>
+    <article class="course-card">
+      <h3
+        data-purpose="course-title-url"
+        class="ud-heading-md course-card-title_course-title___sH9w"
+      >
+        <a href="/course/manageyourtime/" target="_blank" rel="noopener">A Mini Course on Time Management<div class="ud-sr-only" aria-hidden="true"><span data-testid="seo-headline">7 steps you can use immediately to become more productive and master time management</span><span data-testid="seo-rating">Rating: 4.4 out of 5</span><span data-testid="seo-num-reviews">55847 reviews</span><span data-testid="seo-content-info">0.5 total hours</span><span data-testid="seo-num-lectures">12 lectures</span><span data-testid="seo-instructional-level">All Levels</span></div></a>
+      </h3>
+    </article>
+  </body>
+</html>
+"""
+
+
+def actual_2026_udemy_card_response():
+    url = "https://www.udemy.com/courses/free/?p=1"
+    return HtmlResponse(
+        url=url,
+        request=Request(url=url),
+        body=ACTUAL_2026_UDEMY_CARD_FIXTURE.encode(),
+        encoding="utf-8",
+    )
+
+
 def rendered_response(url="https://www.udemy.com/courses/free/?p=1"):
     request = Request(url=url)
     return HtmlResponse(
@@ -189,6 +216,39 @@ def test_legitimate_short_title_with_beginner_word_is_not_rejected():
 
     assert len(records) == 1
     assert records[0]["title"] == "Beginner Python"
+
+
+def test_exact_dom_fix_preserves_semantic_title_child_compatibility():
+    records = extract_udemy_free_records(live_style_rendered_response())
+
+    assert len(records) == 1
+    record = records[0]
+    assert record["title"] == "A Mini Course on Time Management"
+    assert record["avg_rating"] == "4.4"
+    assert record["num_reviews"] == 55847
+    assert "Rating:" not in record["title"]
+    assert "reviews" not in record["title"]
+
+
+def test_actual_2026_udemy_dom_extracts_exact_public_metadata():
+    records = extract_udemy_free_records(actual_2026_udemy_card_response())
+
+    assert len(records) == 1
+    record = records[0]
+
+    assert record["id"] == "slug:manageyourtime"
+    assert record["identity_kind"] == "slug"
+    assert record["title"] == "A Mini Course on Time Management"
+    assert record["avg_rating"] == "4.4"
+    assert record["num_reviews"] == 55847
+    assert (
+        record["headline"]
+        == "7 steps you can use immediately to become more productive and master time management"
+    )
+    assert record["url"] == "https://www.udemy.com/course/manageyourtime/"
+    assert "Rating:" not in record["title"]
+    assert "reviews" not in record["title"]
+    assert "lectures" not in record["title"]
 
 
 def test_spider_builds_bounded_playwright_request():

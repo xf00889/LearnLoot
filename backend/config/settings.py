@@ -165,3 +165,27 @@ CELERY_RESULT_BACKEND = env.str("CELERY_RESULT_BACKEND")
 
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
+
+# Provider discovery runtime configuration. Automated access remains disabled
+# until the operator explicitly acknowledges that the configured source may be
+# accessed under the provider's current terms and policies.
+LEARNLOOT_UDEMY_DISCOVERY_ACCESS_APPROVED = env.bool(
+    "LEARNLOOT_UDEMY_DISCOVERY_ACCESS_APPROVED",
+    default=False,
+)
+LEARNLOOT_UDEMY_DISCOVERY_SOURCE_URL = env.str(
+    "LEARNLOOT_UDEMY_DISCOVERY_SOURCE_URL",
+    default="https://www.udemy.com/courses/free/",
+)
+LEARNLOOT_UDEMY_DISCOVERY_MAX_PAGES = env.int(
+    "LEARNLOOT_UDEMY_DISCOVERY_MAX_PAGES",
+    default=10,
+)
+LEARNLOOT_UDEMY_DISCOVERY_ITEM_LIMIT = env.int(
+    "LEARNLOOT_UDEMY_DISCOVERY_ITEM_LIMIT",
+    default=0,
+)
+LEARNLOOT_UDEMY_DISCOVERY_RENDER_WAIT_MS = env.int(
+    "LEARNLOOT_UDEMY_DISCOVERY_RENDER_WAIT_MS",
+    default=3500,
+)
