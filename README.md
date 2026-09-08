@@ -119,3 +119,28 @@ At the Telegram Bot API transport layer the destination field is still named
 `chat_id`; Telegram uses that same API parameter for channels. LearnLoot exposes
 the application setting as `LEARNLOOT_TELEGRAM_CHANNEL_ID` so the product
 configuration reflects the actual destination.
+
+## Phase 8 public website
+
+Phase 8 adds the public LearnLoot website route used by Telegram channel posts.
+The backend exposes read-only public JSON under `/api/public/courses/`. Public
+results are restricted to active providers, active courses, recent successful
+course checks, current free price state, and an eligibility decision that is at
+least as recent as the latest course check.
+
+The Next.js frontend implements:
+
+- `/` for the latest qualified free courses and Telegram follower CTA.
+- `/courses` for a searchable public catalog.
+- `/courses/<provider-slug>/<course-slug>` for the SEO landing page linked from
+  Telegram channel posts.
+
+Frontend runtime configuration belongs in `frontend/.env.local`; copy it from
+`frontend/.env.example`. Set `NEXT_PUBLIC_API_BASE_URL` to the Django API,
+`NEXT_PUBLIC_SITE_URL` to the public LearnLoot site, and
+`NEXT_PUBLIC_TELEGRAM_CHANNEL_URL` to the public Telegram channel URL.
+
+Keep backend `LEARNLOOT_PUBLIC_BASE_URL` aligned with `NEXT_PUBLIC_SITE_URL`
+before enabling real Telegram channel publication. Course detail pages display
+the latest check time and a changing-availability disclaimer before visitors
+continue to the provider.
