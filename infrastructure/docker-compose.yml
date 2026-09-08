@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: course-deals-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: course_deals
+      POSTGRES_USER: course_deals
+      POSTGRES_PASSWORD: course_deals
+    ports:
+      - "5432:5432"
+    volumes:
+      - course_deals_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U course_deals -d course_deals"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: course-deals-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - course_deals_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  course_deals_postgres_data:
+  course_deals_redis_data:
