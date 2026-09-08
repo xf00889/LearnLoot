@@ -1,5 +1,6 @@
 from django.contrib import admin, messages
 from django.db.models import OuterRef, Subquery
+from django.utils import timezone
 from django.utils.html import format_html
 
 from discovery.models import DiscoveryRun
@@ -10,6 +11,8 @@ from discovery.registry import (
     safe_source_for_display,
 )
 from discovery.tasks import run_provider_discovery
+from publishing.models import PublicationQueueItem
+from publishing.tasks import evaluate_provider_publication_candidates
 
 from .models import Provider
 
@@ -37,6 +40,7 @@ class ProviderAdmin(admin.ModelAdmin):
     )
     actions = (
         "queue_discovery",
+        "queue_publication_evaluation",
         "activate_selected_providers",
         "deactivate_selected_providers",
     )
@@ -50,6 +54,18 @@ class ProviderAdmin(admin.ModelAdmin):
             _last_discovery_status=Subquery(last_run.values("status")[:1]),
             _last_discovery_at=Subquery(last_run.values("started_at")[:1]),
         )
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if obj.status != Provider.Status.ACTIVE:
+            PublicationQueueItem.objects.filter(
+                course__provider=obj,
+                status=PublicationQueueItem.Status.QUEUED,
+            ).update(
+                status=PublicationQueueItem.Status.CANCELLED,
+                error_message="Provider inactive",
+                updated_at=timezone.now(),
+            )
 
     @admin.display(description="Discovery")
     def discovery_status(self, provider):
@@ -130,6 +146,23 @@ class ProviderAdmin(admin.ModelAdmin):
                 level=messages.WARNING,
             )
 
+
+    @admin.action(
+        description="Queue publication evaluation for selected providers",
+        permissions=["change"],
+    )
+    def queue_publication_evaluation(self, request, queryset):
+        queued = 0
+        for provider in queryset.order_by("pk"):
+            evaluate_provider_publication_candidates.delay(provider.pk)
+            queued += 1
+
+        self.message_user(
+            request,
+            f"Queued publication evaluation for {queued} provider(s).",
+            level=messages.SUCCESS,
+        )
+
     @admin.action(description="Activate selected providers", permissions=["change"])
     def activate_selected_providers(self, request, queryset):
         updated = queryset.update(status=Provider.Status.ACTIVE)
@@ -141,7 +174,16 @@ class ProviderAdmin(admin.ModelAdmin):
 
     @admin.action(description="Deactivate selected providers", permissions=["change"])
     def deactivate_selected_providers(self, request, queryset):
+        provider_ids = list(queryset.values_list("pk", flat=True))
         updated = queryset.update(status=Provider.Status.INACTIVE)
+        PublicationQueueItem.objects.filter(
+            course__provider_id__in=provider_ids,
+            status=PublicationQueueItem.Status.QUEUED,
+        ).update(
+            status=PublicationQueueItem.Status.CANCELLED,
+            error_message="Provider inactive",
+            updated_at=timezone.now(),
+        )
         self.message_user(
             request,
             f"Deactivated {updated} provider(s).",

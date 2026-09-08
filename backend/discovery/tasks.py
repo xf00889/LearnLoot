@@ -1,7 +1,9 @@
 from celery import shared_task
 
 from providers.models import Provider
+from publishing.tasks import evaluate_provider_publication_candidates
 
+from .models import DiscoveryRun
 from .registry import build_discovery_target
 from .services import execute_discovery
 
@@ -30,6 +32,10 @@ def run_provider_discovery(provider_id: int) -> dict[str, int | str]:
 
     target = build_discovery_target(provider)
     run = execute_discovery(provider, target.connector, target.source)
+
+    if run.status == DiscoveryRun.Status.SUCCEEDED:
+        evaluate_provider_publication_candidates.delay(provider.pk)
+
     return {
         "provider_id": provider.pk,
         "run_id": run.pk,

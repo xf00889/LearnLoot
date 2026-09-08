@@ -9,7 +9,9 @@ from courses.admin import (
     CourseAdmin,
     CoursePriceInline,
     CourseSourceInline,
+    DealEligibilityInline,
     DiscoveryObservationInline as CourseObservationInline,
+    PublicationQueueInline,
 )
 from courses.models import Course
 from discovery.admin import DiscoveryRunAdmin
@@ -94,10 +96,13 @@ def test_celery_task_invokes_existing_discovery_pipeline(provider):
 
     with patch("discovery.tasks.build_discovery_target", return_value=target), patch(
         "discovery.tasks.execute_discovery", return_value=fake_run
-    ) as execute:
+    ) as execute, patch(
+        "discovery.tasks.evaluate_provider_publication_candidates.delay"
+    ) as publication_delay:
         result = run_provider_discovery.run(provider.pk)
 
     execute.assert_called_once_with(provider, target.connector, "source-a")
+    publication_delay.assert_called_once_with(provider.pk)
     assert result == {
         "provider_id": provider.pk,
         "run_id": 91,
@@ -215,6 +220,8 @@ def test_course_admin_exposes_audit_history_inlines():
         CoursePriceInline,
         CourseSourceInline,
         CourseObservationInline,
+        DealEligibilityInline,
+        PublicationQueueInline,
     )
     assert model_admin.has_add_permission(RequestFactory().get("/")) is False
     assert model_admin.has_delete_permission(RequestFactory().get("/")) is False

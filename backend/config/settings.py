@@ -189,3 +189,65 @@ LEARNLOOT_UDEMY_DISCOVERY_RENDER_WAIT_MS = env.int(
     "LEARNLOOT_UDEMY_DISCOVERY_RENDER_WAIT_MS",
     default=3500,
 )
+
+# Deal scoring and publication eligibility. These rules produce queue items only;
+# Telegram delivery remains a later phase.
+LEARNLOOT_PUBLICATION_MIN_RATING = env.float(
+    "LEARNLOOT_PUBLICATION_MIN_RATING",
+    default=4.0,
+)
+LEARNLOOT_PUBLICATION_MIN_REVIEWS = env.int(
+    "LEARNLOOT_PUBLICATION_MIN_REVIEWS",
+    default=100,
+)
+LEARNLOOT_PUBLICATION_MIN_SCORE = env.int(
+    "LEARNLOOT_PUBLICATION_MIN_SCORE",
+    default=70,
+)
+LEARNLOOT_PUBLICATION_MAX_COURSE_AGE_HOURS = env.int(
+    "LEARNLOOT_PUBLICATION_MAX_COURSE_AGE_HOURS",
+    default=24,
+)
+LEARNLOOT_PUBLICATION_COOLDOWN_HOURS = env.int(
+    "LEARNLOOT_PUBLICATION_COOLDOWN_HOURS",
+    default=168,
+)
+
+# Telegram publication delivery. Disabled by default so tests, development,
+# migrations, and admin inspection never send real messages accidentally.
+LEARNLOOT_TELEGRAM_ENABLED = env.bool(
+    "LEARNLOOT_TELEGRAM_ENABLED",
+    default=False,
+)
+LEARNLOOT_TELEGRAM_BOT_TOKEN = env.str(
+    "LEARNLOOT_TELEGRAM_BOT_TOKEN",
+    default="",
+)
+LEARNLOOT_TELEGRAM_CHAT_ID = env.str(
+    "LEARNLOOT_TELEGRAM_CHAT_ID",
+    default="",
+)
+LEARNLOOT_TELEGRAM_API_BASE_URL = env.str(
+    "LEARNLOOT_TELEGRAM_API_BASE_URL",
+    default="https://api.telegram.org",
+)
+LEARNLOOT_TELEGRAM_TIMEOUT_SECONDS = env.float(
+    "LEARNLOOT_TELEGRAM_TIMEOUT_SECONDS",
+    default=10.0,
+)
+LEARNLOOT_TELEGRAM_MAX_RETRIES = env.int(
+    "LEARNLOOT_TELEGRAM_MAX_RETRIES",
+    default=3,
+)
+LEARNLOOT_TELEGRAM_RETRY_BASE_SECONDS = env.int(
+    "LEARNLOOT_TELEGRAM_RETRY_BASE_SECONDS",
+    default=30,
+)
+LEARNLOOT_TELEGRAM_STALE_SEND_MINUTES = env.int(
+    "LEARNLOOT_TELEGRAM_STALE_SEND_MINUTES",
+    default=15,
+)
+LEARNLOOT_PUBLIC_BASE_URL = env.str(
+    "LEARNLOOT_PUBLIC_BASE_URL",
+    default="http://localhost:3000",
+)
