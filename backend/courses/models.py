@@ -1,7 +1,11 @@
+from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 
 from providers.models import Provider
+
+
+IMAGE_EXTENSIONS = ("jpg", "jpeg", "png", "webp", "avif")
 
 
 class Course(models.Model):
@@ -26,6 +30,25 @@ class Course(models.Model):
     student_count = models.PositiveIntegerField(null=True, blank=True)
     duration_minutes = models.PositiveIntegerField(null=True, blank=True)
     description = models.TextField(blank=True)
+
+    # CMS/editorial overrides. Discovery keeps refreshing the scraped fields
+    # above while these operator-controlled values remain untouched.
+    editorial_title = models.CharField(max_length=500, blank=True)
+    editorial_description = models.TextField(blank=True)
+    editorial_image = models.FileField(
+        upload_to="courses/editorial/%Y/%m/",
+        blank=True,
+        validators=[FileExtensionValidator(allowed_extensions=IMAGE_EXTENSIONS)],
+    )
+    seo_title = models.CharField(max_length=70, blank=True)
+    meta_description = models.CharField(max_length=320, blank=True)
+    meta_keywords = models.CharField(max_length=500, blank=True)
+    social_image = models.FileField(
+        upload_to="courses/social/%Y/%m/",
+        blank=True,
+        validators=[FileExtensionValidator(allowed_extensions=IMAGE_EXTENSIONS)],
+    )
+
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
@@ -61,8 +84,39 @@ class Course(models.Model):
         ]
         ordering = ("-last_seen_at", "id")
 
+    @property
+    def public_title(self) -> str:
+        return self.editorial_title.strip() or self.title
+
+    @property
+    def public_description(self) -> str:
+        return self.editorial_description.strip() or self.description
+
+    @property
+    def public_seo_title(self) -> str:
+        return self.seo_title.strip() or self.public_title
+
+    @property
+    def public_meta_description(self) -> str:
+        value = self.meta_description.strip() or self.public_description
+        return value[:320]
+
+    @property
+    def is_editorially_customized(self) -> bool:
+        return any(
+            (
+                self.editorial_title.strip(),
+                self.editorial_description.strip(),
+                bool(self.editorial_image),
+                self.seo_title.strip(),
+                self.meta_description.strip(),
+                self.meta_keywords.strip(),
+                bool(self.social_image),
+            )
+        )
+
     def __str__(self) -> str:
-        return self.title
+        return self.public_title
 
 
 class CourseSource(models.Model):

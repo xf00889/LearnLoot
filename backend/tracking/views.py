@@ -25,12 +25,11 @@ def outbound_redirect(
         raise Http404("Outbound destination unavailable") from exc
 
     # Analytics is deliberately best-effort. A temporary analytics/cache failure
-    # must not strand a visitor after the course and destination have passed the
+    # must not strand a visitor after the course and provider destination pass the
     # safety checks. No IP address or user-agent is stored in ClickEvent.
     record_click_event(
         request=request,
         course=course,
-        destination=destination,
     )
 
     response = HttpResponseRedirect(destination.url)

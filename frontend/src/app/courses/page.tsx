@@ -1,12 +1,38 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getCourses } from "@/lib/api";
 
-export const metadata = {
-  title: "Free courses",
-  description: "Browse currently free courses that passed LearnLoot publication checks.",
+export const metadata: Metadata = {
+  title: "Free online courses",
+  description:
+    "Browse recently checked free online courses that passed LearnLoot freshness, quality, and publication checks.",
+  keywords: [
+    "free online courses",
+    "Udemy free courses",
+    "free courses with ratings",
+    "online learning deals",
+  ],
+  alternates: { canonical: "/courses" },
+  openGraph: {
+    title: "Free online courses | LearnLoot",
+    description:
+      "Browse recently checked free courses that passed LearnLoot publication checks.",
+    url: "/courses",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Free online courses | LearnLoot",
+    description:
+      "Browse recently checked free courses that passed LearnLoot publication checks.",
+  },
 };
 
-export default async function CoursesPage({ searchParams }: PageProps<"/courses">) {
+type CoursesPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function CoursesPage({ searchParams }: CoursesPageProps) {
   const resolvedSearchParams = await searchParams;
   const q = typeof resolvedSearchParams.q === "string" ? resolvedSearchParams.q : "";
   const courses = await getCourses({ limit: 48, q });
@@ -33,10 +59,7 @@ export default async function CoursesPage({ searchParams }: PageProps<"/courses"
           name="q"
           placeholder="Search by course, instructor, or topic"
         />
-        <button
-          className="rounded-full bg-[color:var(--accent)] px-6 py-3 font-bold text-white"
-          type="submit"
-        >
+        <button className="rounded-full bg-[color:var(--accent)] px-6 py-3 font-bold text-white" type="submit">
           Search
         </button>
       </form>
@@ -44,27 +67,18 @@ export default async function CoursesPage({ searchParams }: PageProps<"/courses"
       {courses.results.length ? (
         <div className="grid gap-5 md:grid-cols-2">
           {courses.results.map((course) => (
-            <article
-              className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface-strong)] p-6"
-              key={course.id}
-            >
+            <article className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface-strong)] p-6" key={course.id}>
               <div className="flex items-center justify-between gap-4 text-sm">
                 <span className="font-bold text-[color:var(--accent)]">Free now</span>
                 <span className="text-[color:var(--muted)]">Score {course.score}/100</span>
               </div>
               <h2 className="mt-4 text-2xl font-black tracking-tight">
-                <Link href={`/courses/${course.provider.slug}/${course.slug}`}>
-                  {course.title}
-                </Link>
+                <Link href={`/courses/${course.provider.slug}/${course.slug}`}>{course.title}</Link>
               </h2>
-              <p className="mt-3 text-[color:var(--muted)]">
-                {course.instructor_name || course.provider.name}
-              </p>
+              <p className="mt-3 text-[color:var(--muted)]">{course.instructor_name || course.provider.name}</p>
               <div className="mt-5 flex flex-wrap gap-3 text-sm text-[color:var(--muted)]">
-                {course.rating ? <span>⭐ {course.rating}</span> : null}
-                {course.review_count ? (
-                  <span>{course.review_count.toLocaleString()} reviews</span>
-                ) : null}
+                {course.rating ? <span>Rating {course.rating}</span> : null}
+                {course.review_count ? <span>{course.review_count.toLocaleString()} reviews</span> : null}
                 {course.duration_minutes ? <span>{course.duration_minutes} min</span> : null}
               </div>
             </article>

@@ -4,9 +4,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from django.apps import apps
 from django.core.cache import cache
-from django.core.exceptions import ValidationError
-from django.db import DatabaseError, IntegrityError, transaction
+from django.db import DatabaseError, connection
 from django.test import Client, override_settings
 from django.utils import timezone
 
@@ -15,7 +15,7 @@ from pricing.models import CoursePrice
 from providers.models import Provider
 from publishing.delivery import _snapshot_defaults
 from publishing.models import DealEligibility, PublicationQueueItem
-from tracking.models import AffiliateLink, ClickEvent
+from tracking.models import ClickEvent
 
 
 @pytest.fixture(autouse=True)
@@ -94,87 +94,44 @@ def test_provider_redirect_records_privacy_minimized_click(provider):
 
     event = ClickEvent.objects.get()
     assert event.course == course
-    assert event.destination_kind == ClickEvent.DestinationKind.PROVIDER
-    assert event.affiliate_link is None
     assert event.source == "course_page"
     assert event.campaign == "launch"
+
     field_names = {field.name for field in ClickEvent._meta.fields}
+    assert "affiliate_link" not in field_names
+    assert "destination_kind" not in field_names
     assert "ip_address" not in field_names
     assert "user_agent" not in field_names
 
 
 @pytest.mark.django_db
 @override_settings(LEARNLOOT_OUTBOUND_CLICK_DEDUPE_SECONDS=0)
-def test_active_affiliate_destination_overrides_provider_and_is_audited(provider):
+def test_course_redirect_always_uses_canonical_provider_url(provider):
     course = make_public_course(provider)
-    affiliate = AffiliateLink.objects.create(
-        course=course,
-        url="https://affiliate.example/learnloot-python",
-        network="Approved Network",
-        status=AffiliateLink.Status.ACTIVE,
-        note="Approved program destination",
-    )
 
     response = Client().get(f"/go/{provider.slug}/{course.slug}/?source=telegram")
 
     assert response.status_code == 302
-    assert response["Location"] == affiliate.url
+    assert response["Location"] == course.canonical_url
+
     event = ClickEvent.objects.get()
-    assert event.affiliate_link == affiliate
-    assert event.destination_kind == ClickEvent.DestinationKind.AFFILIATE
+    assert event.course == course
     assert event.source == "telegram"
 
     api = Client().get(f"/api/public/courses/{provider.slug}/{course.slug}/")
     assert api.status_code == 200
     payload = api.json()
-    assert payload["outbound_is_affiliate"] is True
     assert payload["outbound_url"] == f"http://testserver/go/{provider.slug}/{course.slug}/"
+    assert "outbound_is_affiliate" not in payload
     assert "provider_url" not in payload
 
 
 @pytest.mark.django_db
-def test_affiliate_links_require_https_and_only_one_active_per_course(provider):
-    course = make_public_course(provider)
-    invalid = AffiliateLink(
-        course=course,
-        url="javascript:alert(1)",
-        status=AffiliateLink.Status.INACTIVE,
-    )
-    with pytest.raises(ValidationError):
-        invalid.full_clean()
+def test_course_affiliate_model_and_live_table_are_removed():
+    with pytest.raises(LookupError):
+        apps.get_model("tracking", "AffiliateLink")
 
-    AffiliateLink.objects.create(
-        course=course,
-        url="https://affiliate.example/one",
-        status=AffiliateLink.Status.ACTIVE,
-    )
-    with pytest.raises(IntegrityError):
-        with transaction.atomic():
-            AffiliateLink.objects.create(
-                course=course,
-                url="https://affiliate.example/two",
-                status=AffiliateLink.Status.ACTIVE,
-            )
-
-
-@pytest.mark.django_db
-@override_settings(LEARNLOOT_OUTBOUND_CLICK_DEDUPE_SECONDS=0)
-def test_invalid_active_affiliate_fails_closed_to_valid_canonical_provider(provider):
-    course = make_public_course(provider)
-    affiliate = AffiliateLink.objects.create(
-        course=course,
-        url="https://affiliate.example/original",
-        status=AffiliateLink.Status.ACTIVE,
-    )
-    AffiliateLink.objects.filter(pk=affiliate.pk).update(url="http://unsafe.example/plain-http")
-
-    response = Client().get(f"/go/{provider.slug}/{course.slug}/")
-
-    assert response.status_code == 302
-    assert response["Location"] == course.canonical_url
-    event = ClickEvent.objects.get()
-    assert event.destination_kind == ClickEvent.DestinationKind.PROVIDER
-    assert event.affiliate_link is None
+    assert "affiliate_links" not in connection.introspection.table_names()
 
 
 @pytest.mark.django_db
@@ -289,7 +246,7 @@ def test_telegram_snapshot_adds_source_and_campaign_for_outbound_attribution(pro
     assert "source=telegram&amp;campaign=channel" in snapshot["message_text"]
 
 
-def test_phase9_frontend_uses_tracked_outbound_route_and_disclosure():
+def test_phase9a_frontend_uses_tracked_provider_route_without_course_affiliate_copy():
     root = Path(__file__).resolve().parents[2]
     detail = (
         root
@@ -309,29 +266,29 @@ def test_phase9_frontend_uses_tracked_outbound_route_and_disclosure():
     assert "course.outbound_url" in detail_text
     assert "resolvedSearchParams" in detail_text
     assert "source" in detail_text and "campaign" in detail_text
-    assert "affiliate link" in detail_text
-    assert "sponsored" in detail_text
+    assert "outbound_is_affiliate" not in detail_text
+    assert "affiliate link" not in detail_text.lower()
+    assert "sponsored" not in detail_text
     assert "provider_url" not in detail_text
     assert "outbound_url: string" in api_text
-    assert "outbound_is_affiliate: boolean" in api_text
+    assert "outbound_is_affiliate" not in api_text
     assert "provider_url: string" not in api_text
 
-def test_phase9_admin_registers_affiliate_links_and_read_only_click_events():
+
+def test_phase9a_admin_exposes_only_read_only_course_click_events():
     from django.contrib import admin
 
-    from tracking.admin import AffiliateLinkAdmin, ClickEventAdmin
+    from tracking.admin import ClickEventAdmin
 
-    assert isinstance(admin.site._registry[AffiliateLink], AffiliateLinkAdmin)
     click_admin = admin.site._registry[ClickEvent]
     assert isinstance(click_admin, ClickEventAdmin)
     assert click_admin.has_add_permission(None) is False
     assert click_admin.has_delete_permission(None) is False
     assert set(click_admin.readonly_fields) >= {
         "course",
-        "affiliate_link",
-        "destination_kind",
         "source",
         "campaign",
         "occurred_at",
     }
-
+    assert "affiliate_link" not in click_admin.readonly_fields
+    assert "destination_kind" not in click_admin.readonly_fields

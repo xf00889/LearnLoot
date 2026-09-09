@@ -14,7 +14,7 @@ from django.http import HttpRequest
 
 from courses.models import Course
 
-from .models import AffiliateLink, ClickEvent
+from .models import ClickEvent
 
 logger = logging.getLogger(__name__)
 _TAG_RE = re.compile(r"[^a-z0-9._-]+")
@@ -27,12 +27,6 @@ class OutboundDestinationError(ValueError):
 @dataclass(frozen=True, slots=True)
 class OutboundDestination:
     url: str
-    kind: str
-    affiliate_link: AffiliateLink | None
-
-    @property
-    def is_affiliate(self) -> bool:
-        return self.kind == ClickEvent.DestinationKind.AFFILIATE
 
 
 def _validated_https_url(value: str) -> str:
@@ -43,40 +37,8 @@ def _validated_https_url(value: str) -> str:
     return url
 
 
-def active_affiliate_link(course: Course) -> AffiliateLink | None:
-    prefetched = getattr(course, "public_affiliate_links", None)
-    if prefetched is not None:
-        return prefetched[0] if prefetched else None
-    return (
-        course.affiliate_links.filter(status=AffiliateLink.Status.ACTIVE)
-        .order_by("-updated_at", "-id")
-        .first()
-    )
-
-
 def resolve_outbound_destination(course: Course) -> OutboundDestination:
-    affiliate = active_affiliate_link(course)
-    if affiliate is not None:
-        try:
-            url = _validated_https_url(affiliate.url)
-        except OutboundDestinationError:
-            logger.warning(
-                "Ignoring invalid active affiliate destination for course_id=%s link_id=%s",
-                course.pk,
-                affiliate.pk,
-            )
-        else:
-            return OutboundDestination(
-                url=url,
-                kind=ClickEvent.DestinationKind.AFFILIATE,
-                affiliate_link=affiliate,
-            )
-
-    return OutboundDestination(
-        url=_validated_https_url(course.canonical_url),
-        kind=ClickEvent.DestinationKind.PROVIDER,
-        affiliate_link=None,
-    )
+    return OutboundDestination(url=_validated_https_url(course.canonical_url))
 
 
 def normalize_attribution(
@@ -107,7 +69,6 @@ def record_click_event(
     *,
     request: HttpRequest,
     course: Course,
-    destination: OutboundDestination,
 ) -> bool:
     source = normalize_attribution(
         request.GET.get("source"),
@@ -137,8 +98,6 @@ def record_click_event(
     try:
         ClickEvent.objects.create(
             course=course,
-            affiliate_link=destination.affiliate_link,
-            destination_kind=destination.kind,
             source=source,
             campaign=campaign,
         )

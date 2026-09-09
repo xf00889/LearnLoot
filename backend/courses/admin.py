@@ -78,35 +78,120 @@ class PublicationQueueInline(ReadOnlyInlineMixin, admin.TabularInline):
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
     list_display = (
-        "title",
+        "public_title_display",
         "provider",
         "external_id",
         "status",
+        "cms_customized",
         "rating",
         "review_count",
         "publication_eligible",
         "publication_score",
         "last_checked_at",
-        "last_seen_at",
     )
     list_filter = ("status", "provider")
     search_fields = (
         "title",
+        "editorial_title",
         "external_id",
         "instructor_name",
         "slug",
         "canonical_url",
+        "description",
+        "editorial_description",
+        "seo_title",
+        "meta_description",
+        "meta_keywords",
     )
     list_select_related = ("provider",)
     readonly_fields = (
         "provider",
         "external_id",
-        "slug",
+        "title",
+        "canonical_url",
+        "thumbnail_url",
+        "instructor_name",
+        "rating",
+        "review_count",
+        "student_count",
+        "duration_minutes",
+        "description",
         "first_seen_at",
         "last_seen_at",
         "last_checked_at",
         "created_at",
         "updated_at",
+    )
+    fieldsets = (
+        (
+            "CMS public content",
+            {
+                "description": (
+                    "These operator-controlled fields are never overwritten by a "
+                    "future discovery run. Leave an override blank to use the latest "
+                    "scraped Udemy metadata."
+                ),
+                "fields": (
+                    "status",
+                    "slug",
+                    "editorial_title",
+                    "editorial_description",
+                    "editorial_image",
+                ),
+            },
+        ),
+        (
+            "SEO and social metadata",
+            {
+                "description": (
+                    "Unique metadata for the public course landing page. Meta keywords "
+                    "are supported for compatibility even though major search engines "
+                    "may ignore them."
+                ),
+                "fields": (
+                    "seo_title",
+                    "meta_description",
+                    "meta_keywords",
+                    "social_image",
+                ),
+            },
+        ),
+        (
+            "Scraped provider data",
+            {
+                "classes": ("collapse",),
+                "description": (
+                    "Source-controlled metadata refreshed by discovery. Edit the CMS "
+                    "override fields above instead of changing these values."
+                ),
+                "fields": (
+                    "provider",
+                    "external_id",
+                    "title",
+                    "canonical_url",
+                    "thumbnail_url",
+                    "instructor_name",
+                    "rating",
+                    "review_count",
+                    "student_count",
+                    "duration_minutes",
+                    "description",
+                ),
+            },
+        ),
+        (
+            "Discovery timestamps",
+            {
+                "classes": ("collapse",),
+                "fields": (
+                    "first_seen_at",
+                    "last_seen_at",
+                    "last_checked_at",
+                    "created_at",
+                    "updated_at",
+                ),
+            },
+        ),
     )
     inlines = (
         CoursePriceInline,
@@ -125,6 +210,14 @@ class CourseAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("publication_eligibility")
+
+    @admin.display(description="Course", ordering="title")
+    def public_title_display(self, course):
+        return course.public_title
+
+    @admin.display(description="CMS edited", boolean=True)
+    def cms_customized(self, course):
+        return course.is_editorially_customized
 
     @admin.display(description="Publish eligible", boolean=True)
     def publication_eligible(self, course):

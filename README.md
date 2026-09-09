@@ -145,29 +145,62 @@ before enabling real Telegram channel publication. Course detail pages display
 the latest check time and a changing-availability disclaimer before visitors
 continue to the provider.
 
-## Phase 9 outbound tracking and affiliate-ready redirects
+## Phase 9 course outbound tracking
 
-Phase 9 routes provider CTAs through the controlled backend endpoint
+Phase 9 routes course CTAs through the controlled backend endpoint
 `/go/<provider-slug>/<course-slug>/`. The redirect reuses Phase 8 public-course
-safety checks immediately before leaving LearnLoot, resolves an approved active
-affiliate destination when one exists, otherwise falls back to the course's
-validated HTTPS canonical provider URL, records a privacy-minimized click event,
-and then redirects the visitor.
+safety checks immediately before leaving LearnLoot, validates the course's
+canonical HTTPS provider URL, records a privacy-minimized click event, and then
+redirects the visitor to that provider page.
 
-`affiliate_links` is admin-managed. Only one Active affiliate destination may
-exist per course. Activating a link means the operator has reviewed that
-destination for the relevant provider/program requirements; LearnLoot does not
-automatically invent affiliate parameters. Invalid/non-HTTPS affiliate URLs are
-ignored by delivery resolution and invalid canonical destinations fail closed.
+Course-provider affiliate support has been removed. LearnLoot does not apply an
+affiliate destination to Udemy course links, and the public course API exposes
+only the controlled `outbound_url`, not raw provider URLs or affiliate flags.
 
-`click_events` stores only the course, optional affiliate-link reference,
-destination kind, source, campaign, and timestamp. IP addresses and user-agent
-strings are not persisted. A short configurable cache-only dedupe window reduces
-accidental double-click inflation while still allowing every request to redirect.
-Set `LEARNLOOT_OUTBOUND_CLICK_DEDUPE_SECONDS` to tune or disable that window.
+`click_events` stores only the course, source, campaign, and timestamp. IP
+addresses and user-agent strings are not persisted. A short configurable
+cache-only dedupe window reduces accidental double-click inflation while still
+allowing every request to redirect. Set
+`LEARNLOOT_OUTBOUND_CLICK_DEDUPE_SECONDS` to tune or disable that window.
 
-Future Telegram posts include `source=telegram&campaign=channel` on their
-LearnLoot landing URL. The Phase 8 course page carries those attribution values
-forward to `/go/...`; direct catalog visits default to `source=course_page`.
-The frontend no longer receives the raw provider URL from the public API. It
-receives the controlled outbound URL plus an affiliate-disclosure flag instead.
+Telegram posts include `source=telegram&campaign=channel` on their LearnLoot
+landing URL. The course page carries those attribution values forward to
+`/go/...`; direct catalog visits default to `source=course_page`.
+
+## Phase 9B shopping editorial CMS and site-wide SEO
+
+Phase 9B adds a dedicated `shopping` domain for manually curated Shopee affiliate
+content. This remains separate from Udemy/course links. Course outbound links are
+still non-affiliate and always resolve to the validated canonical provider URL.
+
+Django Admin now supports shopping posts with types such as Top 10 lists, flash
+deals, buying guides, roundups, and articles. Each post has a manual slug, excerpt,
+body, cover image, publication state, SEO title, meta description, meta keywords,
+and optional featured flag. Products are managed inline with rank/position, image,
+original editorial description, optional display prices, badge, pros/cons,
+expiration, and a private HTTPS affiliate destination. Public APIs expose only the
+controlled `/go/shop/...` URL, never the raw affiliate URL.
+
+Shopping click analytics are stored separately in `shopping_click_events`. They
+retain only product, source, campaign, and timestamp; IP addresses and user-agent
+strings are not persisted. A short HMAC/cache-only dedupe window reduces accidental
+double clicks. Redirect responses are no-store and noindex.
+
+Scraped courses are also CMS-editable without losing source integrity. Discovery
+continues to refresh scraped fields while operator-controlled editorial title,
+description, image, slug, SEO title, meta description, meta keywords, and social
+image remain persistent. Blank CMS overrides fall back to the latest scraped value.
+
+The public frontend adds `/shop`, `/shop/top-10`, `/shop/flash-deals`,
+`/shop/guides`, and `/shop/<slug>`. Site-wide metadata uses the Next.js Metadata
+API for titles, descriptions, author/publisher, meta keywords, canonical URLs,
+Open Graph, Twitter cards, crawler directives, and optional Google site
+verification. Next.js also serves `/robots.txt` and `/sitemap.xml`. Course pages
+emit Course + BreadcrumbList JSON-LD; shopping articles emit Article + ItemList +
+BreadcrumbList JSON-LD. Affiliate CTAs are marked `rel="sponsored nofollow"` and
+shopping pages display an affiliate disclosure.
+
+Uploaded CMS media is stored under `backend/media/` in local development and is
+served by Django only when `DEBUG` is enabled. Production deployment should use a
+persistent media volume/object store and a web server/CDN rather than Django's
+development media serving.

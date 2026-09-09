@@ -113,7 +113,7 @@ def test_public_course_list_exposes_only_active_eligible_free_courses(provider):
     assert result["title"] == "Python Fast Track"
     assert result["url"] == "https://learnloot.test/courses/udemy/python-fast-track"
     assert result["outbound_url"] == "http://testserver/go/udemy/python-fast-track/"
-    assert result["outbound_is_affiliate"] is False
+    assert "outbound_is_affiliate" not in result
     assert "provider_url" not in result
     assert result["latest_price"]["is_free"] is True
     assert result["score"] == 92
@@ -245,6 +245,6 @@ def test_phase8_frontend_routes_are_implemented():
     assert "generateMetadata" in detail_text
     assert "Continue to free course" in detail_text
     assert "course.outbound_url" in detail_text
-    assert "outbound_is_affiliate" in detail_text
+    assert "outbound_is_affiliate" not in detail_text
     assert "provider_url" not in detail_text
     assert "/public/courses/" in api.read_text(encoding="utf-8")

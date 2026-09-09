@@ -1,10 +1,9 @@
 # LearnLoot Frontend
 
-Next.js public website for LearnLoot course-deal discovery and Telegram traffic.
+Next.js public website for LearnLoot course discovery, manually curated shopping
+content, Telegram traffic, and SEO landing pages.
 
 ## Development
-
-Copy the frontend environment template and start the development server:
 
 ```powershell
 Copy-Item .env.example .env.local
@@ -12,30 +11,50 @@ npm install
 npm run dev
 ```
 
-The default local settings are:
+Default local settings:
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000/api
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 NEXT_PUBLIC_TELEGRAM_CHANNEL_URL=
+GOOGLE_SITE_VERIFICATION=
 ```
 
-Set `NEXT_PUBLIC_TELEGRAM_CHANNEL_URL` to the public `https://t.me/...` channel
-URL when you are ready to show follower CTAs.
+`GOOGLE_SITE_VERIFICATION` is optional and renders the Google site-verification
+meta tag through the Next.js Metadata API when configured.
 
 ## Public routes
 
-- `/` — homepage with latest qualified free courses
-- `/courses` — searchable public catalog
-- `/courses/[provider]/[slug]` — SEO landing page used by Telegram channel posts
+- `/` - homepage for courses and editorial shopping content.
+- `/courses` - searchable public free-course catalog.
+- `/courses/[provider]/[slug]` - SEO course landing page.
+- `/shop` - shopping editorial hub.
+- `/shop/top-10` - ranked product-list archive.
+- `/shop/flash-deals` - flash-deal archive.
+- `/shop/guides` - buying-guide archive.
+- `/shop/[slug]` - manually authored shopping article/product roundup.
+- `/robots.txt` - generated crawler rules.
+- `/sitemap.xml` - generated site sitemap with public courses and shopping posts.
 
-Telegram channel posts should point to the LearnLoot course landing page rather
-than directly to the provider URL.
+## Course CMS behavior
 
-## Phase 9 outbound links
+Udemy discovery still owns the scraped source fields. Django Admin exposes
+operator-controlled editorial title, description, image, slug, SEO title, meta
+description, meta keywords, and social image. These CMS overrides are not
+replaced by a later scraper refresh; blank overrides fall back to current scraped
+metadata.
 
-Course detail CTAs use the backend-provided `outbound_url` instead of exposing
-the provider URL directly. Query attribution such as `source=telegram` and
-`campaign=channel` is preserved on the tracked redirect. When the backend reports
-an active approved affiliate destination, the CTA shows an affiliate disclosure
-and uses the `sponsored` link relationship.
+Course CTAs continue to use the non-affiliate `/go/<provider>/<course>/` route and
+then the validated canonical provider URL.
+
+## Shopping affiliate content
+
+Shopping content is a separate CMS domain. The operator manually creates the
+article, slug, cover image, SEO fields, product ranking, product image, notes,
+prices, and Shopee affiliate destination in Django Admin. The public API never
+exposes the raw affiliate destination; page CTAs use `/go/shop/...` and are
+marked `rel="sponsored nofollow"`.
+
+Published shopping pages include an affiliate disclosure and structured data for
+Article, ItemList, and BreadcrumbList. Product descriptions and comparisons
+should remain original editorial content rather than copied merchant text.
