@@ -10,6 +10,7 @@ from discovery.scrapy_app import settings
 from discovery.scrapy_app.extractors import (
     extract_udemy_course_image,
     extract_udemy_course_language,
+    extract_udemy_course_price_state,
     extract_udemy_free_records,
 )
 from discovery.scrapy_app.runner import ScrapyCrawlerError, ScrapyUdemySource
@@ -147,8 +148,9 @@ def test_rendered_course_extractor_finds_and_deduplicates_cards():
     assert first["visible_instructors"] == [{"display_name": "Ada Example"}]
     assert first["avg_rating"] == "4.7"
     assert first["num_reviews"] == 1234
-    assert first["is_paid"] is False
-    assert first["catalog_kind"] == "free"
+    assert first["is_paid"] is None
+    assert first["catalog_kind"] == "free_candidate"
+    assert first["free_verified"] is False
 
     second = records[1]
     assert second["id"] == "slug:javascript-basics"
@@ -377,6 +379,20 @@ def test_spider_skips_courses_already_stored_before_counting_limit(tmp_path):
     assert f"{UDEMY_DEFAULT_SEARCH_URL}?p=2" in {item.url for item in outputs if isinstance(item, Request)}
 
 
+
+def test_spider_renders_detail_page_and_bypasses_price_cache_for_verification():
+    spider = UdemyFreeSpider(max_pages="1", render_wait_ms="250")
+    outputs = list(spider.parse(rendered_response()))
+    detail = next(
+        item for item in outputs
+        if isinstance(item, Request) and "/course/" in item.url
+    )
+
+    assert detail.meta["playwright"] is True
+    assert detail.meta["dont_cache"] is True
+    assert detail.meta["playwright_page_goto_kwargs"]["wait_until"] == "domcontentloaded"
+
+
 def test_thumbnail_prefers_largest_lazy_responsive_candidate():
     html = """
     <html><body>
@@ -413,6 +429,110 @@ def test_public_course_page_language_is_read_without_lang_query_facet():
     assert extract_udemy_course_language(response) == "English"
 
 
+
+def test_public_course_page_requires_explicit_free_price_evidence():
+    free_html = '<html><body><div data-purpose="course-price-text"><span>Free</span></div></body></html>'
+    paid_html = '<html><body><div data-purpose="course-price-text"><span>US$19.99</span></div></body></html>'
+    unknown_html = '<html><body><button data-purpose="buy-this-course-button">Enroll now</button></body></html>'
+    url = "https://www.udemy.com/course/python-course/"
+
+    def response(html):
+        return HtmlResponse(
+            url=url,
+            request=Request(url=url),
+            body=html.encode(),
+            encoding="utf-8",
+        )
+
+    assert extract_udemy_course_price_state(response(free_html)) == "free"
+    assert extract_udemy_course_price_state(response(paid_html)) == "paid"
+    assert extract_udemy_course_price_state(response(unknown_html)) == "unknown"
+
+
+def test_public_course_page_conflicting_price_markup_fails_closed_as_paid():
+    html = (
+        '<html><head><meta property="product:price:amount" content="0"></head>'
+        '<body><div data-purpose="course-price-text">US$19.99</div></body></html>'
+    )
+    url = "https://www.udemy.com/course/python-course/"
+    response = HtmlResponse(
+        url=url,
+        request=Request(url=url),
+        body=html.encode(),
+        encoding="utf-8",
+    )
+
+    assert extract_udemy_course_price_state(response) == "paid"
+
+
+def test_public_course_page_jsonld_zero_offer_is_free_and_positive_offer_is_paid():
+    url = "https://www.udemy.com/course/python-course/"
+
+    def state(price):
+        html = (
+            '<html><head><script type="application/ld+json">'
+            '{"@type":"Course","offers":{"@type":"Offer","price":"'
+            + price
+            + '","priceCurrency":"USD"}}</script></head></html>'
+        )
+        response = HtmlResponse(
+            url=url,
+            request=Request(url=url),
+            body=html.encode(),
+            encoding="utf-8",
+        )
+        return extract_udemy_course_price_state(response)
+
+    assert state("0") == "free"
+    assert state("24.99") == "paid"
+
+
+def test_catalog_extractor_does_not_trust_unscoped_course_links():
+    html = (
+        '<html><body>'
+        '<article class="course-card"><a href="/course/free-one/">Free One</a></article>'
+        '<div class="recommendation"><a href="/course/paid-recommendation/">Paid Recommendation</a></div>'
+        '</body></html>'
+    )
+    url = "https://www.udemy.com/topic/python/free/?p=1"
+    response = HtmlResponse(
+        url=url,
+        request=Request(url=url),
+        body=html.encode(),
+        encoding="utf-8",
+    )
+
+    records = extract_udemy_free_records(response)
+
+    assert [record["url"] for record in records] == [
+        "https://www.udemy.com/course/free-one/"
+    ]
+
+
+def test_spider_rejects_paid_or_unverified_course_even_from_free_catalog():
+    spider = UdemyFreeSpider(max_pages="1", render_wait_ms="0", language="en")
+    record = extract_udemy_free_records(rendered_response())[0]
+    url = record["url"]
+
+    paid_html = '<html><body><div data-purpose="course-price-text">$29.99</div><div data-purpose="lead-course-locale">English</div></body></html>'
+    paid_response = HtmlResponse(
+        url=url,
+        request=Request(url=url),
+        body=paid_html.encode(),
+        encoding="utf-8",
+    )
+    assert list(spider.parse_course_detail(paid_response, record)) == []
+
+    unknown_html = '<html><body><div data-purpose="lead-course-locale">English</div></body></html>'
+    unknown_response = HtmlResponse(
+        url=url,
+        request=Request(url=url),
+        body=unknown_html.encode(),
+        encoding="utf-8",
+    )
+    assert list(spider.parse_course_detail(unknown_response, record)) == []
+
+
 def test_spider_filters_non_english_course_from_public_detail_page():
     spider = UdemyFreeSpider(max_pages="1", render_wait_ms="0", language="en")
     record = extract_udemy_free_records(rendered_response())[0]
@@ -430,7 +550,7 @@ def test_spider_enriches_missing_catalog_image_from_public_course_page():
         item for item in outputs
         if isinstance(item, Request) and item.url == "https://www.udemy.com/course/javascript-basics/"
     )
-    html = '<html><head><meta name="twitter:image" content="https://img-c.udemycdn.com/course/480x270/javascript.jpg"></head><body><div data-purpose="lead-course-locale">English</div></body></html>'
+    html = '<html><head><meta name="twitter:image" content="https://img-c.udemycdn.com/course/480x270/javascript.jpg"></head><body><div data-purpose="course-price-text">Free</div><div data-purpose="lead-course-locale">English</div></body></html>'
     response = HtmlResponse(
         url=detail_request.url,
         request=detail_request,
@@ -442,6 +562,9 @@ def test_spider_enriches_missing_catalog_image_from_public_course_page():
 
     assert enriched[0]["title"] == "JavaScript Basics"
     assert enriched[0]["image_480x270"] == "https://img-c.udemycdn.com/course/480x270/javascript.jpg"
+    assert enriched[0]["is_paid"] is False
+    assert enriched[0]["catalog_kind"] == "free"
+    assert enriched[0]["free_verified"] is True
 
 
 def test_scrapy_runner_uses_isolated_subprocess_and_reads_jsonl(tmp_path):

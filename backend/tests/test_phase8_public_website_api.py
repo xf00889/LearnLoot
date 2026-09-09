@@ -6,6 +6,7 @@ import pytest
 from django.test import Client, override_settings
 from django.utils import timezone
 
+from cms.models import ContentCategory
 from courses.models import Course
 from pricing.models import CoursePrice
 from providers.models import Provider
@@ -205,6 +206,30 @@ def test_public_course_list_supports_search_and_limit(provider):
 
 
 @pytest.mark.django_db
+def test_public_course_categories_and_category_filter_include_only_visible_courses(provider):
+    python = ContentCategory.objects.create(scope=ContentCategory.Scope.COURSE, name="Python", slug="python")
+    sql = ContentCategory.objects.create(scope=ContentCategory.Scope.COURSE, name="SQL", slug="sql")
+    first = make_course(provider, external_id="python-1", slug="python-one", title="Python One")
+    first.category = python
+    first.save(update_fields=["category"])
+    second = make_course(provider, external_id="python-2", slug="python-two", title="Python Two")
+    second.category = python
+    second.save(update_fields=["category"])
+    hidden = make_course(provider, external_id="sql-paid", slug="sql-paid", title="SQL Paid", is_free=False, amount=Decimal("9.99"))
+    hidden.category = sql
+    hidden.save(update_fields=["category"])
+
+    categories = Client().get("/api/public/courses/categories/")
+    assert categories.status_code == 200
+    assert categories.json()["results"] == [{"name": "Python", "slug": "python", "count": 2}]
+
+    filtered = Client().get("/api/public/courses/?category=python")
+    assert filtered.status_code == 200
+    assert {row["slug"] for row in filtered.json()["results"]} == {"python-one", "python-two"}
+
+
+
+@pytest.mark.django_db
 def test_public_api_does_not_expose_inactive_provider_courses(provider):
     make_course(provider, provider_status=Provider.Status.INACTIVE)
 
@@ -219,6 +244,7 @@ def test_phase8_frontend_routes_are_implemented():
 
     homepage = root / "frontend" / "src" / "app" / "page.tsx"
     catalog = root / "frontend" / "src" / "app" / "courses" / "page.tsx"
+    categories = root / "frontend" / "src" / "app" / "courses" / "categories" / "page.tsx"
     detail = (
         root
         / "frontend"
@@ -232,7 +258,7 @@ def test_phase8_frontend_routes_are_implemented():
     api = root / "frontend" / "src" / "lib" / "api.ts"
     frontend_env = root / "frontend" / ".env.example"
 
-    for path in (homepage, catalog, detail, api, frontend_env):
+    for path in (homepage, catalog, categories, detail, api, frontend_env):
         assert path.exists(), path
 
     homepage_text = homepage.read_text(encoding="utf-8")
@@ -247,4 +273,6 @@ def test_phase8_frontend_routes_are_implemented():
     assert "course.outbound_url" in detail_text
     assert "outbound_is_affiliate" not in detail_text
     assert "provider_url" not in detail_text
-    assert "/public/courses/" in api.read_text(encoding="utf-8")
+    api_text = api.read_text(encoding="utf-8")
+    assert "/public/courses/" in api_text
+    assert "getCourseCategories" in api_text

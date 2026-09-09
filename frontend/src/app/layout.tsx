@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   applicationName: SITE_NAME,
   title: {
-    default: "LearnLoot - Free courses and curated deals",
+    default: "LearnLoot - Free courses and independent buying guides",
     template: "%s | LearnLoot",
   },
   description: SITE_DESCRIPTION,
@@ -43,12 +43,12 @@ export const metadata: Metadata = {
     type: "website",
     url: siteUrl,
     siteName: SITE_NAME,
-    title: "LearnLoot - Free courses and curated deals",
+    title: "LearnLoot - Free courses and independent buying guides",
     description: SITE_DESCRIPTION,
   },
   twitter: {
     card: "summary_large_image",
-    title: "LearnLoot - Free courses and curated deals",
+    title: "LearnLoot - Free courses and independent buying guides",
     description: SITE_DESCRIPTION,
   },
   robots: {

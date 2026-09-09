@@ -176,6 +176,9 @@ def _visible_course(course: Course) -> bool:
 def _visible_public_courses(request: HttpRequest) -> list[Course]:
     queryset = _base_course_queryset()
     query = request.GET.get("q", "").strip()
+    category_slug = request.GET.get("category", "").strip()
+    if category_slug:
+        queryset = queryset.filter(category__slug=category_slug)
     if query:
         queryset = queryset.filter(
             Q(title__icontains=query)
@@ -219,6 +222,21 @@ def public_course_list(request: HttpRequest) -> JsonResponse:
             "results": [_course_summary(request, course) for course in courses],
         }
     )
+
+
+@require_GET
+def public_course_categories(request: HttpRequest) -> JsonResponse:
+    categories: dict[int, dict[str, Any]] = {}
+    for course in _base_course_queryset()[:SITEMAP_MAX_COURSES]:
+        if not _visible_course(course) or course.category_id is None:
+            continue
+        row = categories.setdefault(
+            course.category_id,
+            {"name": course.category.name, "slug": course.category.slug, "count": 0},
+        )
+        row["count"] += 1
+    results = sorted(categories.values(), key=lambda row: (str(row["name"]).lower(), str(row["slug"])))
+    return JsonResponse({"results": results})
 
 
 @require_GET

@@ -9,6 +9,7 @@ from scrapy_playwright.page import PageMethod
 from discovery.scrapy_app.extractors import (
     extract_udemy_course_image,
     extract_udemy_course_language,
+    extract_udemy_course_price_state,
     extract_udemy_free_records,
 )
 from discovery.udemy_catalog import UDEMY_DEFAULT_SEARCH_URL, validate_udemy_catalog_source
@@ -72,8 +73,14 @@ class UdemyFreeSpider(scrapy.Spider):
             self._seen_course_keys.add(course_key)
             if str(record.get("url") or "").strip() in self._excluded_course_urls:
                 continue
+            if record.get("listing_price_state") == "paid":
+                self.logger.info(
+                    "Skipping paid Udemy catalog card %s before detail verification.",
+                    record.get("url"),
+                )
+                continue
 
-            # English filtering is intentionally performed from the public
+            # English and free-price filtering are performed from the public
             # course page instead of a blocked Udemy ?lang=en URL facet. The
             # same detail request also supplies the image fallback.
             yield scrapy.Request(
@@ -81,6 +88,18 @@ class UdemyFreeSpider(scrapy.Spider):
                 callback=self.parse_course_detail,
                 errback=self.course_detail_failed,
                 cb_kwargs={"record": record},
+                meta={
+                    "playwright": True,
+                    "playwright_page_methods": [
+                        PageMethod("wait_for_timeout", self.render_wait_ms),
+                    ],
+                    "playwright_page_goto_kwargs": {
+                        "wait_until": "domcontentloaded",
+                    },
+                    # Price can change from free to paid. Never reuse the
+                    # one-hour HTTP cache as current free-price evidence.
+                    "dont_cache": True,
+                },
                 priority=20,
             )
 
@@ -106,6 +125,28 @@ class UdemyFreeSpider(scrapy.Spider):
         if self.item_limit and self._accepted >= self.item_limit:
             return
 
+        detail_price_state = extract_udemy_course_price_state(response)
+        listing_price_state = str(record.get("listing_price_state") or "unknown")
+        if detail_price_state == "paid":
+            self.logger.info(
+                "Skipping paid Udemy course %s after public detail-page price verification.",
+                record.get("url"),
+            )
+            return
+        if detail_price_state == "free":
+            price_verification = "public_course_page"
+        elif listing_price_state == "free":
+            # A dedicated Free price on the just-rendered catalog card is
+            # acceptable fallback evidence when the detail page omits price
+            # markup, provided the detail page did not expose a paid signal.
+            price_verification = "public_listing_card"
+        else:
+            self.logger.info(
+                "Skipping Udemy course %s because its public price could not be verified as free.",
+                record.get("url"),
+            )
+            return
+
         language = extract_udemy_course_language(response)
         if self.language == "en" and not self._is_english(language):
             if language:
@@ -125,21 +166,24 @@ class UdemyFreeSpider(scrapy.Spider):
         if not enriched.get("image_480x270"):
             enriched["image_480x270"] = extract_udemy_course_image(response)
         enriched["course_language"] = language
+        enriched["is_paid"] = False
+        enriched["catalog_kind"] = "free"
+        enriched["free_verified"] = True
+        enriched["price_verification"] = price_verification
         self._accepted += 1
         yield enriched
 
     def course_detail_failed(self, failure):
         record = dict(failure.request.cb_kwargs["record"])
-        if self.language == "en":
-            self.logger.info(
-                "Skipping Udemy course %s because its public language check failed.",
-                record.get("url"),
-            )
-            return
-        if self.item_limit and self._accepted >= self.item_limit:
-            return
-        self._accepted += 1
-        yield record
+        self.logger.info(
+            "Skipping Udemy course %s because public free-price verification failed to load.",
+            record.get("url"),
+        )
+        # Keep this callback a generator so the backward-compatible
+        # course_image_failed wrapper can safely ``yield from`` it.
+        if False:  # pragma: no cover - generator marker only
+            yield record
+        return
 
     # Backward-compatible callback name retained for focused tests and any
     # in-flight task serialized before this patch was applied.

@@ -260,6 +260,7 @@ def test_phase12_frontend_has_nested_course_affiliate_categories_and_course_imag
     course_categories = (root / "frontend" / "src" / "app" / "admin" / "courses" / "categories" / "page.tsx").read_text(encoding="utf-8")
     affiliate_categories = (root / "frontend" / "src" / "app" / "admin" / "shop" / "categories" / "page.tsx").read_text(encoding="utf-8")
     course_list = (root / "frontend" / "src" / "app" / "courses" / "page.tsx").read_text(encoding="utf-8")
+    course_card = (root / "frontend" / "src" / "components" / "course-card.tsx").read_text(encoding="utf-8")
     admin_course_list = (root / "frontend" / "src" / "app" / "admin" / "courses" / "page.tsx").read_text(encoding="utf-8")
     affiliate_editor = (root / "frontend" / "src" / "app" / "admin" / "shop" / "[id]" / "page.tsx").read_text(encoding="utf-8")
     shopping_grid = (root / "frontend" / "src" / "components" / "shopping-post-grid.tsx").read_text(encoding="utf-8")
@@ -268,7 +269,8 @@ def test_phase12_frontend_has_nested_course_affiliate_categories_and_course_imag
     assert 'href: "/admin/shop/categories"' in shell
     assert "CategoryManager" in course_categories
     assert "CategoryManager" in affiliate_categories
-    assert "course.thumbnail_url" in course_list
+    assert "CourseCard" in course_list
+    assert "course.thumbnail_url" in course_card
     assert "row.thumbnail_url" in admin_course_list
     assert "ClientRichTextEditor value={product.content}" in affiliate_editor
     assert "ClientRichTextEditor value={draftProduct.content}" in affiliate_editor

@@ -50,6 +50,8 @@ def free_record(course_id="slug:free-python-basics", title="Free Python Basics")
         "headline": "",
         "is_paid": False,
         "catalog_kind": "free",
+        "free_verified": True,
+        "price_verification": "public_course_page",
         "source_url": SOURCE,
         "source_type": "udemy_free_catalog_scrapy",
     }
@@ -111,8 +113,10 @@ def test_udemy_provider_filters_non_free_or_non_catalog_records():
     paid["is_paid"] = True
     wrong_catalog = free_record("slug:wrong")
     wrong_catalog["catalog_kind"] = "discount"
+    unverified = free_record("slug:unverified")
+    unverified["free_verified"] = False
 
-    connector, _crawler = build_connector([paid, wrong_catalog, free_record()])
+    connector, _crawler = build_connector([paid, wrong_catalog, unverified, free_record()])
 
     records = list(connector.discover(SOURCE))
 
@@ -148,6 +152,11 @@ def test_udemy_provider_refuses_to_reclassify_paid_or_ambiguous_record():
     ambiguous.pop("catalog_kind")
     with pytest.raises(ValueError, match="free catalog"):
         connector.parse(ambiguous, SOURCE)
+
+    unverified = free_record()
+    unverified["free_verified"] = False
+    with pytest.raises(ValueError, match="not verified free"):
+        connector.parse(unverified, SOURCE)
 
 
 def test_udemy_provider_does_not_use_retired_direct_course_api():

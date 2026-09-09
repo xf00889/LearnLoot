@@ -74,6 +74,8 @@ class UdemyFreeCourseProvider(CourseProvider):
                 continue
             if raw_course.get("is_paid") is not False:
                 continue
+            if raw_course.get("free_verified") is not True:
+                continue
             yield raw_course
 
     def identify(self, raw_course: RawCourse, source: str) -> DiscoveryIdentity:
@@ -86,6 +88,8 @@ class UdemyFreeCourseProvider(CourseProvider):
             raise ValueError("Udemy record did not originate from the free catalog")
         if raw_course.get("is_paid") is not False:
             raise ValueError("Udemy record is not explicitly marked as a free course")
+        if raw_course.get("free_verified") is not True:
+            raise ValueError("Udemy record was not verified free from its public course page")
 
         canonical_url = self._absolute_course_url(raw_course.get("url"))
         instructor_name = self._instructor_name(raw_course.get("visible_instructors"))

@@ -10,10 +10,7 @@ function firstSearchValue(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
-function buildAttributedOutboundUrl(
-  outboundUrl: string,
-  searchParams: Record<string, string | string[] | undefined>,
-): string {
+function buildAttributedOutboundUrl(outboundUrl: string, searchParams: Record<string, string | string[] | undefined>): string {
   const url = new URL(outboundUrl);
   const source = firstSearchValue(searchParams.source).trim();
   const campaign = firstSearchValue(searchParams.campaign).trim();
@@ -31,7 +28,6 @@ export async function generateMetadata({ params }: CoursePageProps): Promise<Met
   const { provider, slug } = await params;
   const course = await getCourse(provider, slug);
   if (!course) return { title: "Course not found", robots: { index: false, follow: false } };
-
   const image = course.seo.social_image_url || course.thumbnail_url;
   return {
     title: course.seo.title || course.title,
@@ -39,19 +35,8 @@ export async function generateMetadata({ params }: CoursePageProps): Promise<Met
     keywords: csvKeywords(course.seo.keywords),
     authors: [{ name: "LearnLoot" }],
     alternates: { canonical: course.url },
-    openGraph: {
-      title: course.seo.title || course.title,
-      description: course.seo.description || course.description,
-      url: course.url,
-      type: "website",
-      images: image ? [{ url: image }] : undefined,
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: course.seo.title || course.title,
-      description: course.seo.description || course.description,
-      images: image ? [image] : undefined,
-    },
+    openGraph: { title: course.seo.title || course.title, description: course.seo.description || course.description, url: course.url, type: "website", images: image ? [{ url: image }] : undefined },
+    twitter: { card: "summary_large_image", title: course.seo.title || course.title, description: course.seo.description || course.description, images: image ? [image] : undefined },
     robots: { index: true, follow: true },
   };
 }
@@ -63,14 +48,7 @@ export default async function CourseDetailPage({ params, searchParams }: CourseP
   if (!course) notFound();
 
   const outboundUrl = buildAttributedOutboundUrl(course.outbound_url, resolvedSearchParams);
-  const courseJsonLd = {
-    "@context": "https://schema.org",
-    "@type": "Course",
-    name: course.title,
-    description: course.description,
-    url: course.url,
-    provider: { "@type": "Organization", name: course.provider.name },
-  };
+  const courseJsonLd = { "@context": "https://schema.org", "@type": "Course", name: course.title, description: course.description, url: course.url, provider: { "@type": "Organization", name: course.provider.name } };
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -82,43 +60,60 @@ export default async function CourseDetailPage({ params, searchParams }: CourseP
   };
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-5 py-12">
+    <main className="mx-auto w-full max-w-7xl px-5 py-10 sm:py-14">
       <JsonLd data={[courseJsonLd, breadcrumbJsonLd]} />
-      <Link className="text-sm font-bold text-[color:var(--accent)]" href="/courses">Back to courses</Link>
+      <nav className="mb-6 flex flex-wrap items-center gap-2 text-sm text-[color:var(--muted)]" aria-label="Breadcrumb">
+        <Link className="public-link" href="/courses">Courses</Link>
+        {course.category ? <><span>/</span><Link className="public-link" href={`/courses?category=${encodeURIComponent(course.category.slug)}`}>{course.category.name}</Link></> : null}
+        <span>/</span><span className="line-clamp-1">{course.title}</span>
+      </nav>
 
-      <section className="mt-6 rounded-[2rem] border border-[color:var(--border)] bg-[color:var(--surface-strong)] p-8 shadow-sm">
-        <div className="flex flex-wrap items-center gap-3 text-sm font-bold uppercase tracking-[0.22em] text-[color:var(--accent)]">
-          <span>Free now</span><span>•</span><span>{course.provider.name}</span><span>•</span><span>Score {course.score}/100</span>
-        </div>
-        <h1 className="mt-5 text-4xl font-black tracking-tight sm:text-5xl">{course.title}</h1>
-        {(course.category || course.language) ? <p className="mt-3 text-sm font-semibold text-[color:var(--muted)]">{[course.category?.name, course.language].filter(Boolean).join(" · ")}</p> : null}
-        {course.thumbnail_url ? <img alt={course.title} className="mt-6 aspect-video w-full rounded-2xl object-cover" src={course.thumbnail_url} /> : null}
-        {course.short_description ? <p className="mt-5 text-lg leading-8 text-[color:var(--muted)]">{course.short_description}</p> : null}
-        {course.description_html ? (
-          <div className="cms-rich-content mt-5 text-lg text-[color:var(--muted)]" dangerouslySetInnerHTML={{ __html: course.description_html }} />
-        ) : (
-          <p className="mt-5 text-lg leading-8 text-[color:var(--muted)]">{course.description || "This free-course deal passed LearnLoot publication checks."}</p>
-        )}
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+        <article>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="public-badge public-badge-free">Free</span>
+            <span className="text-sm text-[color:var(--muted)]">Course provided by {course.provider.name}</span>
+          </div>
+          <h1 className="mt-4 max-w-4xl text-4xl font-bold leading-tight tracking-[-0.045em] sm:text-5xl">{course.title}</h1>
+          <p className="mt-4 text-sm text-[color:var(--muted)]">{[course.instructor_name, course.category?.name, course.language].filter(Boolean).join(" · ")}</p>
+          {course.short_description ? <p className="mt-6 max-w-3xl text-lg leading-8 text-[color:var(--muted)]">{course.short_description}</p> : null}
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl bg-[color:var(--surface)] p-4"><p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Rating</p><p className="mt-1 text-2xl font-black">{course.rating ?? "N/A"}</p></div>
-          <div className="rounded-2xl bg-[color:var(--surface)] p-4"><p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Reviews</p><p className="mt-1 text-2xl font-black">{course.review_count?.toLocaleString() ?? "N/A"}</p></div>
-          <div className="rounded-2xl bg-[color:var(--surface)] p-4"><p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Duration</p><p className="mt-1 text-2xl font-black">{course.duration_minutes ? `${course.duration_minutes} min` : "N/A"}</p></div>
-        </div>
+          <section className="mt-8 border-y border-[color:var(--border)] py-6" aria-label="Course information">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              <div><p className="text-xs uppercase tracking-[0.12em] text-[color:var(--muted)]">Rating</p><p className="mt-1 text-xl font-semibold">{course.rating ?? "N/A"}</p></div>
+              <div><p className="text-xs uppercase tracking-[0.12em] text-[color:var(--muted)]">Reviews</p><p className="mt-1 text-xl font-semibold">{course.review_count?.toLocaleString() ?? "N/A"}</p></div>
+              <div><p className="text-xs uppercase tracking-[0.12em] text-[color:var(--muted)]">Duration</p><p className="mt-1 text-xl font-semibold">{course.duration_minutes ? `${course.duration_minutes} min` : "N/A"}</p></div>
+              <div><p className="text-xs uppercase tracking-[0.12em] text-[color:var(--muted)]">LearnLoot score</p><p className="mt-1 text-xl font-semibold">{course.score}/100</p></div>
+            </div>
+          </section>
 
-        <div className="mt-8 rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
-          <p className="font-bold">Instructor</p>
-          <p className="mt-1 text-[color:var(--muted)]">{course.instructor_name || "Provider instructor details unavailable"}</p>
-          <p className="mt-4 text-sm text-[color:var(--muted)]">Last checked: {course.last_checked_at ? new Date(course.last_checked_at).toLocaleString() : "Not available"}</p>
-          <p className="mt-2 text-sm text-[color:var(--muted)]">Course availability can change after LearnLoot checks it. Confirm the current provider page before enrolling.</p>
-          <p className="mt-2 text-sm text-[color:var(--muted)]">LearnLoot records a privacy-minimized outbound click when you continue, then sends you to the course provider&apos;s canonical page.</p>
-        </div>
+          <section className="mt-8">
+            <h2 className="text-2xl font-bold tracking-[-0.03em]">About this course</h2>
+            {course.description_html ? (
+              <div className="cms-rich-content mt-5 max-w-3xl leading-7 text-[color:var(--muted)]" dangerouslySetInnerHTML={{ __html: course.description_html }} />
+            ) : (
+              <p className="mt-5 max-w-3xl leading-7 text-[color:var(--muted)]">{course.description || "This free-course opportunity passed LearnLoot publication checks."}</p>
+            )}
+          </section>
 
-        <div className="mt-8 flex flex-wrap gap-3">
-          <a className="rounded-full bg-[color:var(--accent)] px-6 py-3 font-bold text-white hover:bg-[color:var(--accent-strong)]" href={outboundUrl} rel="nofollow noopener noreferrer" target="_blank">Continue to free course</a>
-          <Link className="rounded-full border border-[color:var(--border)] px-6 py-3 font-bold hover:bg-[color:var(--surface)]" href="/courses">Browse more deals</Link>
-        </div>
-      </section>
+          <section className="public-card-muted mt-8 max-w-3xl p-5">
+            <h2 className="font-semibold">Verification note</h2>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">Last checked: {course.last_checked_at ? new Date(course.last_checked_at).toLocaleString() : "Not available"}. Course availability can change after LearnLoot checks it, so confirm the current provider page before enrolling.</p>
+            <p className="mt-2 text-sm leading-6 text-[color:var(--muted)]">LearnLoot records a privacy-minimized outbound click when you continue, then sends you to the course provider&apos;s canonical page.</p>
+            <Link className="public-link mt-3 inline-flex text-sm" href="/course-verification-policy">Read the course verification policy →</Link>
+          </section>
+        </article>
+
+        <aside className="public-card overflow-hidden lg:sticky lg:top-24">
+          {course.thumbnail_url ? <img alt={course.title} className="aspect-video w-full border-b border-[color:var(--border)] object-cover" src={course.thumbnail_url} /> : <div className="aspect-video bg-[color:var(--surface)]" />}
+          <div className="p-5">
+            <span className="public-badge public-badge-free">Currently free</span>
+            <p className="mt-4 text-sm leading-6 text-[color:var(--muted)]">You will leave LearnLoot and continue to {course.provider.name} to confirm availability and enroll.</p>
+            <a className="public-button public-button-primary mt-5 w-full" href={outboundUrl} rel="nofollow noopener noreferrer" target="_blank">Continue to free course ↗</a>
+            <Link className="public-button public-button-secondary mt-2 w-full" href="/courses">Browse more courses</Link>
+          </div>
+        </aside>
+      </div>
     </main>
   );
 }

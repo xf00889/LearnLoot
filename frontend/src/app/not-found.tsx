@@ -2,24 +2,15 @@ import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <main className="mx-auto flex min-h-[60vh] w-full max-w-3xl flex-col items-center justify-center px-5 text-center">
-      <p className="text-sm font-bold uppercase tracking-[0.25em] text-[color:var(--accent)]">
-        Not found
-      </p>
-      <h1 className="mt-4 text-4xl font-black tracking-tight">
-        This LearnLoot page is not public right now.
-      </h1>
-      <p className="mt-4 text-[color:var(--muted)]">
-        A course deal may no longer be active, or a shopping article may still be
-        a draft or archived in the CMS.
-      </p>
-      <div className="mt-8 flex flex-wrap justify-center gap-3">
-        <Link className="rounded-full bg-[color:var(--accent)] px-6 py-3 font-bold text-white" href="/courses">
-          Browse courses
-        </Link>
-        <Link className="rounded-full border border-[color:var(--border)] px-6 py-3 font-bold" href="/shop">
-          Browse shop & deals
-        </Link>
+    <main className="mx-auto flex w-full max-w-4xl flex-1 items-center px-5 py-20">
+      <div className="max-w-2xl">
+        <p className="public-eyebrow">404</p>
+        <h1 className="mt-3 text-4xl font-bold tracking-[-0.04em] sm:text-5xl">This page is not available</h1>
+        <p className="mt-4 leading-7 text-[color:var(--muted)]">The page may have moved, a course may no longer be publicly eligible, or the link may be incorrect.</p>
+        <div className="mt-7 flex flex-wrap gap-3">
+          <Link className="public-button public-button-primary" href="/courses">Browse free courses</Link>
+          <Link className="public-button public-button-secondary" href="/shop">Explore shopping guides</Link>
+        </div>
       </div>
     </main>
   );

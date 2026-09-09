@@ -70,6 +70,16 @@ export type CourseListResponse = {
   results: CourseSummary[];
 };
 
+export type CourseCategorySummary = {
+  name: string;
+  slug: string;
+  count: number;
+};
+
+export type CourseCategoryListResponse = {
+  results: CourseCategorySummary[];
+};
+
 export type ShoppingPostType =
   | "top_10"
   | "flash_deals"
@@ -151,12 +161,18 @@ export async function getHealth(): Promise<HealthResponse> {
 export async function getCourses(options?: {
   limit?: number;
   q?: string;
+  category?: string;
 }): Promise<CourseListResponse> {
   const params = new URLSearchParams();
   if (options?.limit) params.set("limit", String(options.limit));
   if (options?.q) params.set("q", options.q);
+  if (options?.category) params.set("category", options.category);
   const suffix = params.size ? `?${params.toString()}` : "";
   return getJson<CourseListResponse>(`/public/courses/${suffix}`);
+}
+
+export async function getCourseCategories(): Promise<CourseCategoryListResponse> {
+  return getJson<CourseCategoryListResponse>("/public/courses/categories/");
 }
 
 export async function getCourse(provider: string, slug: string): Promise<CourseDetail | null> {

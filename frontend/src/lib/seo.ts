@@ -1,6 +1,6 @@
 export const SITE_NAME = "LearnLoot";
 export const SITE_DESCRIPTION =
-  "Discover verified free courses and independently curated shopping guides, ranked lists, and flash deals.";
+  "Discover recently checked free courses and independently edited shopping guides, ranked lists, and deal roundups.";
 
 export function getSiteUrl(): string {
   return (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");

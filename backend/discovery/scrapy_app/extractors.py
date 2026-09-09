@@ -1,3 +1,4 @@
+import json
 import re
 from collections.abc import Iterable
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -289,6 +290,169 @@ def _thumbnail(card: Selector) -> str:
     return ""
 
 
+def _price_state_from_text(value: str | None) -> str:
+    """Classify a dedicated current-price value conservatively."""
+
+    normalized = " ".join(str(value or "").split()).strip().lower()
+    if not normalized:
+        return "unknown"
+
+    # Only trust "Free" inside a dedicated current-price field. Paid courses
+    # can contain unrelated phrases such as "free preview" or "free trial".
+    if re.search(r"\bfree\b", normalized) and not re.search(
+        r"\bfree\s+(?:preview|trial)\b", normalized
+    ):
+        return "free"
+
+    # Current prices are localized (US$19.99, EUR 19,99, PHP 999, etc.).
+    # We only need to distinguish explicit zero from explicit non-zero.
+    numbers = re.findall(r"(?<!\d)(\d+(?:[.,]\d+)?)(?!\d)", normalized)
+    for raw_number in numbers:
+        digits = re.sub(r"\D", "", raw_number)
+        if not digits:
+            continue
+        return "free" if set(digits) <= {"0"} else "paid"
+
+    return "unknown"
+
+
+def _jsonld_course_offer_states(response) -> list[str]:
+    states: list[str] = []
+
+    def visit(node):
+        if isinstance(node, list):
+            for child in node:
+                visit(child)
+            return
+        if not isinstance(node, dict):
+            return
+
+        node_type = node.get("@type")
+        if isinstance(node_type, str):
+            types = {node_type.lower()}
+        elif isinstance(node_type, list):
+            types = {str(item).lower() for item in node_type}
+        else:
+            types = set()
+
+        if "course" in types:
+            offers = node.get("offers")
+            offer_items = offers if isinstance(offers, list) else [offers]
+            for offer in offer_items:
+                if not isinstance(offer, dict):
+                    continue
+                for key in ("price", "lowPrice"):
+                    if key not in offer:
+                        continue
+                    state = _price_state_from_text(str(offer.get(key)))
+                    if state != "unknown":
+                        states.append(state)
+                        break
+
+        if "@graph" in node:
+            visit(node["@graph"])
+
+    for script in response.css("script[type='application/ld+json']::text").getall():
+        try:
+            payload = json.loads(script)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        visit(payload)
+
+    return states
+
+
+def extract_udemy_course_price_state(response) -> str:
+    """Return ``free``, ``paid``, or ``unknown`` from public course-page evidence.
+
+    The catalog/topic URL is only a discovery source. LearnLoot does not mark a
+    course free until the public course landing page provides explicit current-
+    price evidence.
+    """
+
+    explicit_states: list[str] = []
+    for query in (
+        "meta[property='product:price:amount']::attr(content)",
+        "meta[itemprop='price']::attr(content)",
+        "[itemprop='price']::attr(content)",
+    ):
+        for value in response.css(query).getall():
+            state = _price_state_from_text(value)
+            if state != "unknown":
+                explicit_states.append(state)
+
+    # Read current price only; never use original/list-price containers. When
+    # public markup conflicts, paid evidence wins. That deliberately favors a
+    # false negative over publishing a paid course as Free.
+    for query in (
+        "[data-purpose='course-price-text']",
+        "[data-purpose='discount-price-text']",
+        "[data-testid='course-price']",
+        "[data-testid='price-text']",
+    ):
+        for node in response.css(query):
+            state = _price_state_from_text(
+                _clean_text(node.xpath(".//text()").getall())
+            )
+            if state != "unknown":
+                explicit_states.append(state)
+
+    explicit_states.extend(_jsonld_course_offer_states(response))
+    if "paid" in explicit_states:
+        return "paid"
+    if "free" in explicit_states:
+        return "free"
+
+    # Purchase CTAs are useful negative evidence. "Enroll now" is not positive
+    # proof because subscription-included paid courses can also use that text.
+    cta_text = _clean_text(
+        response.css("[data-purpose='buy-this-course-button'] *::text").getall()
+        + response.css("[data-purpose='buy-this-course-button']::text").getall()
+        + response.css("[data-purpose*='add-to-cart'] *::text").getall()
+        + response.css("[data-purpose*='add-to-cart']::text").getall()
+    ).lower()
+    if "buy now" in cta_text or "add to cart" in cta_text:
+        return "paid"
+
+    return "unknown"
+
+
+def _course_card_price_state(card: Selector) -> str:
+    for query in (
+        "[data-purpose='course-price-text']",
+        "[data-purpose='discount-price-text']",
+        "[data-testid='course-price']",
+        "[data-testid='price-text']",
+    ):
+        for node in card.css(query):
+            state = _price_state_from_text(
+                _clean_text(node.xpath(".//text()").getall())
+            )
+            if state != "unknown":
+                return state
+
+    cta_text = _clean_text(
+        card.css("[data-purpose*='add-to-cart'] *::text").getall()
+        + card.css("[data-purpose*='add-to-cart']::text").getall()
+    ).lower()
+    return "paid" if "add to cart" in cta_text else "unknown"
+
+
+def _course_card_anchors(response) -> list[Selector]:
+    """Return links scoped to actual course cards, not page-wide recommendations."""
+
+    selectors = (
+        "[data-purpose*='course-card'] a[href*='/course/']",
+        "[data-testid='course-card'] a[href*='/course/']",
+        "[class*='course-card'] a[href*='/course/']",
+        "h2[data-purpose='course-title-url'] a[href*='/course/']",
+        "h3[data-purpose='course-title-url'] a[href*='/course/']",
+    )
+    anchors: list[Selector] = []
+    for query in selectors:
+        anchors.extend(response.css(query))
+    return anchors
+
 def extract_udemy_course_image(response) -> str:
     """Return public social/course image metadata from a Udemy course page."""
 
@@ -342,7 +506,7 @@ def extract_udemy_free_records(response) -> list[dict]:
     records: list[dict] = []
     seen_urls: set[str] = set()
 
-    for anchor in response.css("a[href*='/course/']"):
+    for anchor in _course_card_anchors(response):
         resolved = _course_url(anchor.attrib.get("href"))
         if resolved is None:
             continue
@@ -375,8 +539,12 @@ def extract_udemy_free_records(response) -> list[dict]:
                 "num_reviews": _review_count(card),
                 "num_subscribers": None,
                 "headline": _headline(card),
-                "is_paid": False,
-                "catalog_kind": "free",
+                # A /free/ source URL does not prove every rendered course link
+                # is free. The detail callback verifies the current price.
+                "listing_price_state": _course_card_price_state(card),
+                "is_paid": None,
+                "catalog_kind": "free_candidate",
+                "free_verified": False,
                 "source_url": response.url,
                 "source_type": "udemy_free_catalog_scrapy",
             }
