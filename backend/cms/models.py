@@ -30,3 +30,30 @@ class MediaAsset(models.Model):
 
     def __str__(self) -> str:
         return self.title or self.file.name
+
+
+class ContentCategory(models.Model):
+    class Scope(models.TextChoices):
+        COURSE = "course", "Courses"
+        AFFILIATE = "affiliate", "Affiliate"
+
+    scope = models.CharField(max_length=20, choices=Scope.choices)
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=140)
+    description = models.CharField(max_length=300, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "cms_categories"
+        constraints = [
+            models.UniqueConstraint(fields=("scope", "slug"), name="cms_category_scope_slug_uniq"),
+        ]
+        indexes = [
+            models.Index(fields=("scope", "is_active", "name"), name="cms_category_scope_active_idx"),
+        ]
+        ordering = ("scope", "name", "id")
+
+    def __str__(self) -> str:
+        return f"{self.get_scope_display()}: {self.name}"

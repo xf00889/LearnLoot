@@ -13,6 +13,9 @@ class ShoppingProductInline(admin.StackedInline):
         "slug",
         "image",
         "short_description",
+        "content",
+        "category",
+        "language",
         "affiliate_url",
         ("displayed_price", "original_price", "currency"),
         "badge",
@@ -31,12 +34,14 @@ class ShoppingPostAdmin(admin.ModelAdmin):
         "title",
         "post_type",
         "status",
+        "category",
+        "language",
         "is_featured",
         "active_product_count",
         "published_at",
         "updated_at",
     )
-    list_filter = ("status", "post_type", "is_featured")
+    list_filter = ("status", "post_type", "category", "language", "is_featured")
     search_fields = (
         "title",
         "slug",
@@ -57,6 +62,8 @@ class ShoppingPostAdmin(admin.ModelAdmin):
                     "title",
                     "slug",
                     "excerpt",
+                    "category",
+                    "language",
                     "body",
                     "cover_image",
                     "published_at",
@@ -116,15 +123,17 @@ class ShoppingProductAdmin(admin.ModelAdmin):
         "name",
         "post",
         "position",
+        "category",
+        "language",
         "is_active",
         "displayed_price",
         "currency",
         "expires_at",
         "updated_at",
     )
-    list_filter = ("is_active", "post__post_type", "currency")
+    list_filter = ("is_active", "category", "language", "post__post_type", "currency")
     search_fields = ("name", "slug", "short_description", "post__title", "affiliate_url")
-    list_select_related = ("post",)
+    list_select_related = ("post", "category")
     prepopulated_fields = {"slug": ("name",)}
     ordering = ("post", "position")
 

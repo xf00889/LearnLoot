@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -90,6 +91,9 @@ export default async function CourseDetailPage({ params, searchParams }: CourseP
           <span>Free now</span><span>•</span><span>{course.provider.name}</span><span>•</span><span>Score {course.score}/100</span>
         </div>
         <h1 className="mt-5 text-4xl font-black tracking-tight sm:text-5xl">{course.title}</h1>
+        {(course.category || course.language) ? <p className="mt-3 text-sm font-semibold text-[color:var(--muted)]">{[course.category?.name, course.language].filter(Boolean).join(" · ")}</p> : null}
+        {course.thumbnail_url ? <img alt={course.title} className="mt-6 aspect-video w-full rounded-2xl object-cover" src={course.thumbnail_url} /> : null}
+        {course.short_description ? <p className="mt-5 text-lg leading-8 text-[color:var(--muted)]">{course.short_description}</p> : null}
         {course.description_html ? (
           <div className="cms-rich-content mt-5 text-lg text-[color:var(--muted)]" dangerouslySetInnerHTML={{ __html: course.description_html }} />
         ) : (

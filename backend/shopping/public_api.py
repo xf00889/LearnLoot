@@ -38,7 +38,8 @@ def _base_post_queryset() -> QuerySet[ShoppingPost]:
             published_at__isnull=False,
             published_at__lte=timezone.now(),
         )
-        .prefetch_related("products")
+        .select_related("category")
+        .prefetch_related("products__category")
         .order_by("-is_featured", "-published_at", "-updated_at", "id")
     )
 
@@ -87,9 +88,13 @@ def _product_payload(request: HttpRequest, post: ShoppingPost, product: Shopping
         "id": product.id,
         "position": product.position,
         "name": product.name,
+        "title": product.name,
         "slug": product.slug,
         "image_url": _file_url(request, product.image),
         "short_description": product.short_description,
+        "content": product.content,
+        "category": ({"name": product.category.name, "slug": product.category.slug} if product.category else None),
+        "language": product.language,
         "displayed_price": str(product.displayed_price) if product.displayed_price is not None else None,
         "original_price": str(product.original_price) if product.original_price is not None else None,
         "currency": product.currency,
@@ -110,6 +115,9 @@ def _post_summary(request: HttpRequest, post: ShoppingPost) -> dict[str, Any]:
         "slug": post.slug,
         "url": _public_post_url(post),
         "excerpt": post.excerpt,
+        "short_description": post.excerpt,
+        "category": ({"name": post.category.name, "slug": post.category.slug} if post.category else None),
+        "language": post.language,
         "cover_image_url": _file_url(request, post.cover_image),
         "is_featured": post.is_featured,
         "published_at": post.published_at.isoformat() if post.published_at else None,
@@ -149,6 +157,8 @@ def _filtered_posts(request: HttpRequest) -> QuerySet[ShoppingPost]:
             | Q(excerpt__icontains=query)
             | Q(body__icontains=query)
             | Q(meta_keywords__icontains=query)
+            | Q(category__name__icontains=query)
+            | Q(language__icontains=query)
             | Q(products__name__icontains=query)
         ).distinct()
     return queryset

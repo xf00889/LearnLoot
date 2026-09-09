@@ -5,7 +5,7 @@ from pathlib import Path
 from scrapy.http import HtmlResponse, Request
 
 from discovery.scrapy_app import settings
-from discovery.scrapy_app.extractors import extract_udemy_free_records
+from discovery.scrapy_app.extractors import extract_udemy_course_image, extract_udemy_free_records
 from discovery.scrapy_app.runner import ScrapyUdemySource
 from discovery.scrapy_app.spiders.udemy_free import UdemyFreeSpider
 
@@ -270,9 +270,61 @@ def test_spider_paginates_only_after_finding_course_cards():
     records = [item for item in outputs if isinstance(item, dict)]
     requests = [item for item in outputs if isinstance(item, Request)]
 
-    assert len(records) == 2
-    assert len(requests) == 1
-    assert requests[0].url == "https://www.udemy.com/courses/free/?p=2"
+    assert len(records) == 1
+    assert records[0]["title"] == "Python for Beginners"
+    assert {request.url for request in requests} == {
+        "https://www.udemy.com/course/javascript-basics/",
+        "https://www.udemy.com/courses/free/?p=2",
+    }
+
+
+def test_thumbnail_prefers_largest_lazy_responsive_candidate():
+    html = """
+    <html><body>
+      <article class="course-card">
+        <a href="/course/image-course/">Image Course</a>
+        <picture>
+          <source data-srcset="https://img-c.udemycdn.com/course/240x135/small.jpg 240w, https://img-c.udemycdn.com/course/750x422/large.jpg 750w">
+          <img src="data:image/gif;base64,placeholder" data-src="https://img-c.udemycdn.com/course/480x270/medium.jpg">
+        </picture>
+      </article>
+    </body></html>
+    """
+    url = "https://www.udemy.com/courses/free/?p=1"
+    response = HtmlResponse(url=url, request=Request(url=url), body=html.encode(), encoding="utf-8")
+
+    records = extract_udemy_free_records(response)
+
+    assert records[0]["image_480x270"] == "https://img-c.udemycdn.com/course/750x422/large.jpg"
+
+
+def test_public_course_page_image_metadata_is_used_as_fallback():
+    html = '<html><head><meta property="og:image" content="https://img-c.udemycdn.com/course/750x422/fallback.jpg"></head></html>'
+    url = "https://www.udemy.com/course/image-course/"
+    response = HtmlResponse(url=url, request=Request(url=url), body=html.encode(), encoding="utf-8")
+
+    assert extract_udemy_course_image(response) == "https://img-c.udemycdn.com/course/750x422/fallback.jpg"
+
+
+def test_spider_enriches_missing_catalog_image_from_public_course_page():
+    spider = UdemyFreeSpider(max_pages="1", render_wait_ms="0")
+    outputs = list(spider.parse(rendered_response()))
+    detail_request = next(
+        item for item in outputs
+        if isinstance(item, Request) and item.url == "https://www.udemy.com/course/javascript-basics/"
+    )
+    html = '<html><head><meta name="twitter:image" content="https://img-c.udemycdn.com/course/480x270/javascript.jpg"></head></html>'
+    response = HtmlResponse(
+        url=detail_request.url,
+        request=detail_request,
+        body=html.encode(),
+        encoding="utf-8",
+    )
+
+    enriched = list(spider.parse_course_image(response, **detail_request.cb_kwargs))
+
+    assert enriched[0]["title"] == "JavaScript Basics"
+    assert enriched[0]["image_480x270"] == "https://img-c.udemycdn.com/course/480x270/javascript.jpg"
 
 
 def test_scrapy_runner_uses_isolated_subprocess_and_reads_jsonl(tmp_path):

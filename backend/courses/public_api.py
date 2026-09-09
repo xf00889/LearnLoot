@@ -49,7 +49,7 @@ def _base_course_queryset() -> QuerySet[Course]:
             last_checked_at__gte=_freshness_cutoff(),
             publication_eligibility__evaluated_at__gte=F("last_checked_at"),
         )
-        .select_related("provider", "publication_eligibility")
+        .select_related("provider", "publication_eligibility", "category")
         .prefetch_related(Prefetch("prices", queryset=latest_prices, to_attr="public_prices"))
         .order_by("-publication_eligibility__score", "-last_checked_at", "title", "id")
     )
@@ -126,6 +126,9 @@ def _course_summary(request: HttpRequest, course: Course) -> dict[str, Any]:
         "url": _public_course_url(course),
         "outbound_url": _outbound_url(request, course),
         "thumbnail_url": _course_thumbnail_url(request, course),
+        "short_description": course.short_description,
+        "category": ({"name": course.category.name, "slug": course.category.slug} if course.category else None),
+        "language": course.language,
         "instructor_name": course.instructor_name,
         "rating": str(course.rating) if course.rating is not None else None,
         "review_count": course.review_count,
@@ -181,6 +184,9 @@ def _visible_public_courses(request: HttpRequest) -> list[Course]:
             | Q(description__icontains=query)
             | Q(editorial_description__icontains=query)
             | Q(meta_keywords__icontains=query)
+            | Q(short_description__icontains=query)
+            | Q(category__name__icontains=query)
+            | Q(language__icontains=query)
         )
 
     courses: list[Course] = []

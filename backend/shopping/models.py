@@ -5,6 +5,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
 
+from cms.models import ContentCategory
 from cms.sanitizer import sanitize_rich_html
 
 from .validators import validate_https_affiliate_url
@@ -31,6 +32,14 @@ class ShoppingPost(models.Model):
     slug = models.SlugField(max_length=320, unique=True)
     excerpt = models.CharField(max_length=500, blank=True)
     body = models.TextField(blank=True)
+    category = models.ForeignKey(
+        ContentCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shopping_posts",
+    )
+    language = models.CharField(max_length=80, null=True, blank=True)
     cover_image = models.FileField(
         upload_to="shopping/posts/%Y/%m/",
         blank=True,
@@ -61,8 +70,15 @@ class ShoppingPost(models.Model):
     def public_meta_description(self) -> str:
         return (self.meta_description.strip() or self.excerpt.strip() or self.title)[:320]
 
+    def clean(self):
+        super().clean()
+        if self.category_id and self.category.scope != ContentCategory.Scope.AFFILIATE:
+            from django.core.exceptions import ValidationError
+            raise ValidationError({"category": "Shopping categories must use the Affiliate scope."})
+
     def save(self, *args, **kwargs):
         self.body = sanitize_rich_html(self.body)
+        self.language = (self.language or "").strip() or None
         if not self.slug:
             self.slug = slugify(self.title)[:320]
         if self.status == self.Status.PUBLISHED and self.published_at is None:
@@ -84,6 +100,15 @@ class ShoppingProduct(models.Model):
         validators=[FileExtensionValidator(allowed_extensions=IMAGE_EXTENSIONS)],
     )
     short_description = models.TextField(blank=True)
+    content = models.TextField(blank=True)
+    category = models.ForeignKey(
+        ContentCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="shopping_products",
+    )
+    language = models.CharField(max_length=80, null=True, blank=True)
     affiliate_url = models.URLField(max_length=2000, validators=[validate_https_affiliate_url])
     displayed_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     original_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -112,9 +137,17 @@ class ShoppingProduct(models.Model):
     def is_expired(self) -> bool:
         return self.expires_at is not None and self.expires_at <= timezone.now()
 
+    def clean(self):
+        super().clean()
+        if self.category_id and self.category.scope != ContentCategory.Scope.AFFILIATE:
+            from django.core.exceptions import ValidationError
+            raise ValidationError({"category": "Shopping product categories must use the Affiliate scope."})
+
     def save(self, *args, **kwargs):
         if not self.slug:
             self.slug = slugify(self.name)[:220]
+        self.content = sanitize_rich_html(self.content)
+        self.language = (self.language or "").strip() or None
         self.currency = (self.currency or "PHP").strip().upper()[:3]
         super().save(*args, **kwargs)
 

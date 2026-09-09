@@ -3,6 +3,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.html import strip_tags
 
+from cms.models import ContentCategory
 from cms.sanitizer import sanitize_rich_html
 
 from providers.models import Provider
@@ -38,6 +39,15 @@ class Course(models.Model):
     # above while these operator-controlled values remain untouched.
     editorial_title = models.CharField(max_length=500, blank=True)
     editorial_description = models.TextField(blank=True)
+    short_description = models.CharField(max_length=500, blank=True)
+    category = models.ForeignKey(
+        ContentCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="courses",
+    )
+    language = models.CharField(max_length=80, null=True, blank=True)
     editorial_image = models.FileField(
         upload_to="courses/editorial/%Y/%m/",
         blank=True,
@@ -109,7 +119,7 @@ class Course(models.Model):
 
     @property
     def public_meta_description(self) -> str:
-        value = self.meta_description.strip() or self.public_description
+        value = self.meta_description.strip() or self.short_description.strip() or self.public_description
         return value[:320]
 
     @property
@@ -118,6 +128,9 @@ class Course(models.Model):
             (
                 self.editorial_title.strip(),
                 self.editorial_description.strip(),
+                self.short_description.strip(),
+                self.category_id is not None,
+                (self.language or "").strip(),
                 bool(self.editorial_image),
                 self.seo_title.strip(),
                 self.meta_description.strip(),
@@ -127,8 +140,15 @@ class Course(models.Model):
         )
 
 
+    def clean(self):
+        super().clean()
+        if self.category_id and self.category.scope != ContentCategory.Scope.COURSE:
+            from django.core.exceptions import ValidationError
+            raise ValidationError({"category": "Course categories must use the Courses scope."})
+
     def save(self, *args, **kwargs):
         self.editorial_description = sanitize_rich_html(self.editorial_description)
+        self.language = (self.language or "").strip() or None
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:

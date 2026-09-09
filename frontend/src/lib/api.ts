@@ -11,6 +11,11 @@ export type ProviderSummary = {
   name: string;
 };
 
+export type PublicCategory = {
+  name: string;
+  slug: string;
+};
+
 export type CoursePrice = {
   amount: string | null;
   currency: string;
@@ -34,6 +39,9 @@ export type CourseSummary = {
   url: string;
   outbound_url: string;
   thumbnail_url: string;
+  short_description: string;
+  category: PublicCategory | null;
+  language: string | null;
   instructor_name: string;
   rating: string | null;
   review_count: number | null;
@@ -77,6 +85,9 @@ export type ShoppingPostSummary = {
   slug: string;
   url: string;
   excerpt: string;
+  short_description: string;
+  category: PublicCategory | null;
+  language: string | null;
   cover_image_url: string;
   is_featured: boolean;
   published_at: string | null;
@@ -90,6 +101,9 @@ export type ShoppingProduct = {
   slug: string;
   image_url: string;
   short_description: string;
+  content: string;
+  category: PublicCategory | null;
+  language: string | null;
   displayed_price: string | null;
   original_price: string | null;
   currency: string;

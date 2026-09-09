@@ -158,6 +158,10 @@ def upsert_course(
             }
             changed_fields: list[str] = []
             for field_name, value in mutable_fields.items():
+                if field_name == "thumbnail_url" and not str(value or "").strip():
+                    # A transient card/detail-image miss must not erase the last
+                    # successfully observed Udemy/provider image.
+                    continue
                 if getattr(course_model, field_name) != value:
                     setattr(course_model, field_name, value)
                     changed_fields.append(field_name)

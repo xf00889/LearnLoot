@@ -129,6 +129,14 @@ def _title(anchor: Selector, card: Selector, slug: str) -> str:
     if direct and not _looks_like_card_summary(direct):
         return direct
 
+    # Some public/fixture card layouts place the visible title directly inside
+    # a plain course link nested under h2/h3, with no semantic title attribute.
+    # Preserve that visible text (including intentional casing such as
+    # "JavaScript") before falling back to a title derived from the slug.
+    anchor_text = _clean_text(anchor.xpath("./text()[normalize-space()]").getall())
+    if anchor_text and not _looks_like_card_summary(anchor_text):
+        return anchor_text
+
     for query in ("h3::text", "h2::text"):
         value = _clean_text(card.css(query).getall())
         if value and not _looks_like_card_summary(value):
@@ -216,17 +224,87 @@ def _headline(card: Selector) -> str:
     )
 
 
-def _thumbnail(card: Selector) -> str:
-    src = card.css("img::attr(src)").get()
-    if src:
-        return urljoin("https://www.udemy.com", src)
-
-    srcset = card.css("img::attr(srcset)").get()
-    if not srcset:
+def _absolute_image_url(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text or text.startswith("data:") or text.startswith("blob:"):
         return ""
+    absolute = urljoin("https://www.udemy.com", text)
+    parsed = urlsplit(absolute)
+    if parsed.scheme not in {"http", "https"}:
+        return ""
+    return absolute
 
-    first = srcset.split(",", 1)[0].strip().split(" ", 1)[0]
-    return urljoin("https://www.udemy.com", first) if first else ""
+
+def _best_srcset_url(value: str | None) -> str:
+    candidates: list[tuple[float, str]] = []
+    for index, raw_candidate in enumerate(str(value or "").split(",")):
+        parts = raw_candidate.strip().split()
+        if not parts:
+            continue
+        url = _absolute_image_url(parts[0])
+        if not url:
+            continue
+        weight = float(index)
+        if len(parts) > 1:
+            descriptor = parts[-1].lower()
+            try:
+                if descriptor.endswith("w"):
+                    weight = float(descriptor[:-1])
+                elif descriptor.endswith("x"):
+                    weight = float(descriptor[:-1]) * 10_000
+            except ValueError:
+                pass
+        candidates.append((weight, url))
+    if not candidates:
+        return ""
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def _thumbnail(card: Selector) -> str:
+    # Udemy uses responsive/lazy image attributes and <picture> sources across
+    # catalog variants. Prefer the largest responsive candidate before a plain
+    # src, which can be a low-resolution placeholder.
+    responsive_values = (
+        card.css("picture source::attr(srcset)").getall()
+        + card.css("picture source::attr(data-srcset)").getall()
+        + card.css("img::attr(srcset)").getall()
+        + card.css("img::attr(data-srcset)").getall()
+        + card.css("img::attr(data-lazy-srcset)").getall()
+    )
+    responsive_urls = [_best_srcset_url(value) for value in responsive_values]
+    responsive_urls = [value for value in responsive_urls if value]
+    if responsive_urls:
+        return responsive_urls[0]
+
+    for query in (
+        "img::attr(data-src)",
+        "img::attr(data-lazy-src)",
+        "img::attr(data-original)",
+        "img::attr(src)",
+    ):
+        for value in card.css(query).getall():
+            resolved = _absolute_image_url(value)
+            if resolved:
+                return resolved
+    return ""
+
+
+def extract_udemy_course_image(response) -> str:
+    """Return public social/course image metadata from a Udemy course page."""
+
+    selectors = (
+        "meta[property='og:image']::attr(content)",
+        "meta[property='og:image:url']::attr(content)",
+        "meta[name='twitter:image']::attr(content)",
+        "meta[name='twitter:image:src']::attr(content)",
+        "meta[itemprop='image']::attr(content)",
+    )
+    for query in selectors:
+        for value in response.css(query).getall():
+            resolved = _absolute_image_url(value)
+            if resolved:
+                return resolved
+    return ""
 
 
 def extract_udemy_free_records(response) -> list[dict]:

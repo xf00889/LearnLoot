@@ -1,14 +1,15 @@
 "use client";
 
 import DashboardOutlined from "@mui/icons-material/DashboardOutlined";
+import FolderOutlined from "@mui/icons-material/FolderOutlined";
+import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
+import MenuIcon from "@mui/icons-material/Menu";
 import PhotoLibraryOutlined from "@mui/icons-material/PhotoLibraryOutlined";
 import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
-import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
-import MenuIcon from "@mui/icons-material/Menu";
 import {
-  AppBar, Box, CircularProgress, Divider, Drawer, IconButton, List, ListItemButton,
-  ListItemIcon, ListItemText, Toolbar, Typography, Button,
+  AppBar, Box, Button, CircularProgress, Divider, Drawer, IconButton, List,
+  ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography,
 } from "@mui/material";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -17,11 +18,24 @@ import { useEffect, useState } from "react";
 import { adminLogout, ensureAdminCsrf, type AdminUser } from "@/lib/admin-api";
 
 const drawerWidth = 236;
-const nav = [
-  { href: "/admin", label: "Dashboard", icon: <DashboardOutlined /> },
-  { href: "/admin/courses", label: "Courses", icon: <MenuBookOutlined /> },
-  { href: "/admin/shop", label: "Shop & Deals", icon: <ShoppingBagOutlined /> },
-  { href: "/admin/media", label: "Media Library", icon: <PhotoLibraryOutlined /> },
+
+const sectionGroups = [
+  {
+    label: "Courses",
+    icon: <MenuBookOutlined />,
+    hrefs: [
+      { href: "/admin/courses", label: "All courses" },
+      { href: "/admin/courses/categories", label: "Categories" },
+    ],
+  },
+  {
+    label: "Affiliate",
+    icon: <ShoppingBagOutlined />,
+    hrefs: [
+      { href: "/admin/shop", label: "Content" },
+      { href: "/admin/shop/categories", label: "Categories" },
+    ],
+  },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {
@@ -48,9 +62,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         if (!cancelled) setLoading(false);
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [pathname, router]);
 
   if (pathname === "/admin/login") return <>{children}</>;
@@ -61,10 +73,43 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <Toolbar sx={{ px: 2 }}><Typography fontWeight={900}>LearnLoot Admin</Typography></Toolbar>
       <Divider />
       <List sx={{ px: 1, py: 1 }}>
-        {nav.map((item) => <ListItemButton key={item.href} component={Link} href={item.href} selected={pathname === item.href || (item.href !== "/admin" && pathname.startsWith(`${item.href}/`))} sx={{ borderRadius: 1, mb: 0.5 }}><ListItemIcon sx={{ minWidth: 38 }}>{item.icon}</ListItemIcon><ListItemText primary={item.label} /></ListItemButton>)}
+        <ListItemButton component={Link} href="/admin" selected={pathname === "/admin"} sx={{ borderRadius: 1, mb: 0.5 }}>
+          <ListItemIcon sx={{ minWidth: 38 }}><DashboardOutlined /></ListItemIcon>
+          <ListItemText primary="Dashboard" />
+        </ListItemButton>
+
+        {sectionGroups.map((group) => (
+          <Box key={group.label} sx={{ mb: 0.75 }}>
+            <ListItemButton disabled sx={{ opacity: "1 !important", borderRadius: 1, minHeight: 40 }}>
+              <ListItemIcon sx={{ minWidth: 38, color: "text.primary" }}>{group.icon}</ListItemIcon>
+              <ListItemText primary={group.label} primaryTypographyProps={{ fontWeight: 800, color: "text.primary" }} />
+            </ListItemButton>
+            <List disablePadding>
+              {group.hrefs.map((item) => (
+                <ListItemButton
+                  key={item.href}
+                  component={Link}
+                  href={item.href}
+                  selected={pathname === item.href || (item.href.endsWith("/courses") && pathname.startsWith("/admin/courses/") && !pathname.startsWith("/admin/courses/categories")) || (item.href.endsWith("/shop") && pathname.startsWith("/admin/shop/") && !pathname.startsWith("/admin/shop/categories"))}
+                  sx={{ borderRadius: 1, mb: 0.25, pl: 6.25, minHeight: 38 }}
+                >
+                  <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 14 }} />
+                </ListItemButton>
+              ))}
+            </List>
+          </Box>
+        ))}
+
+        <ListItemButton component={Link} href="/admin/media" selected={pathname === "/admin/media"} sx={{ borderRadius: 1, mb: 0.5 }}>
+          <ListItemIcon sx={{ minWidth: 38 }}><PhotoLibraryOutlined /></ListItemIcon>
+          <ListItemText primary="Media Library" />
+        </ListItemButton>
       </List>
       <Box sx={{ mt: "auto", p: 1 }}>
-        <ListItemButton component="a" href={`${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api"}`.replace(/\/api\/?$/, "/django-admin/")} sx={{ borderRadius: 1 }}><ListItemText primary="Django fallback" secondary="Emergency only" /></ListItemButton>
+        <ListItemButton component="a" href={`${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api"}`.replace(/\/api\/?$/, "/django-admin/")} sx={{ borderRadius: 1 }}>
+          <ListItemIcon sx={{ minWidth: 38 }}><FolderOutlined /></ListItemIcon>
+          <ListItemText primary="Django fallback" secondary="Emergency only" />
+        </ListItemButton>
       </Box>
     </Box>
   );

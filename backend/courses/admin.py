@@ -82,6 +82,8 @@ class CourseAdmin(admin.ModelAdmin):
         "provider",
         "external_id",
         "status",
+        "category",
+        "language",
         "cms_customized",
         "rating",
         "review_count",
@@ -89,7 +91,7 @@ class CourseAdmin(admin.ModelAdmin):
         "publication_score",
         "last_checked_at",
     )
-    list_filter = ("status", "provider")
+    list_filter = ("status", "provider", "category", "language")
     search_fields = (
         "title",
         "editorial_title",
@@ -103,7 +105,7 @@ class CourseAdmin(admin.ModelAdmin):
         "meta_description",
         "meta_keywords",
     )
-    list_select_related = ("provider",)
+    list_select_related = ("provider", "category")
     readonly_fields = (
         "provider",
         "external_id",
@@ -135,6 +137,9 @@ class CourseAdmin(admin.ModelAdmin):
                     "status",
                     "slug",
                     "editorial_title",
+                    "short_description",
+                    "category",
+                    "language",
                     "editorial_description",
                     "editorial_image",
                 ),

@@ -3,31 +3,122 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8
 export type AdminUser = { id: number; username: string; email: string; is_staff: boolean; is_superuser: boolean };
 export type AdminSession = { authenticated: boolean; user: AdminUser | null };
 
+export type AdminCategoryScope = "course" | "affiliate";
+export type AdminCategory = {
+  id: number;
+  scope: AdminCategoryScope;
+  name: string;
+  slug: string;
+  description: string;
+  is_active: boolean;
+  updated_at: string;
+};
+
 export type DashboardPayload = {
   courses: { total: number; active: number; customized: number };
   shopping: { posts: number; published: number; products: number };
   analytics: { course_clicks: number; shopping_clicks: number };
   publishing: { queued: number; telegram_failed: number };
   media: { assets: number };
+  categories: { courses: number; affiliate: number };
   discovery: { latest_status: string | null; latest_started_at: string | null };
 };
 
 export type AdminCourseSummary = {
-  id: number; title: string; source_title: string; provider: string; provider_slug: string;
-  external_id: string; slug: string; status: string; rating: string | null; review_count: number | null;
-  last_checked_at: string | null; customized: boolean; updated_at: string;
+  id: number;
+  title: string;
+  source_title: string;
+  provider: string;
+  provider_slug: string;
+  external_id: string;
+  slug: string;
+  status: string;
+  thumbnail_url: string;
+  category: AdminCategory | null;
+  language: string | null;
+  short_description: string;
+  rating: string | null;
+  review_count: number | null;
+  last_checked_at: string | null;
+  customized: boolean;
+  updated_at: string;
 };
 
 export type AdminCourseDetail = AdminCourseSummary & {
-  cms: { editorial_title: string; editorial_description: string; editorial_image_url: string; seo_title: string; meta_description: string; meta_keywords: string; social_image_url: string };
-  source: { canonical_url: string; thumbnail_url: string; instructor_name: string; description: string; student_count: number | null; duration_minutes: number | null; first_seen_at: string; last_seen_at: string };
+  cms: {
+    editorial_title: string;
+    editorial_description: string;
+    content: string;
+    short_description: string;
+    category: AdminCategory | null;
+    language: string | null;
+    editorial_image_url: string;
+    seo_title: string;
+    meta_description: string;
+    meta_keywords: string;
+    social_image_url: string;
+  };
+  source: {
+    canonical_url: string;
+    thumbnail_url: string;
+    instructor_name: string;
+    description: string;
+    student_count: number | null;
+    duration_minutes: number | null;
+    first_seen_at: string;
+    last_seen_at: string;
+  };
   prices: Array<{ amount: string | null; currency: string; is_free: boolean; price_type: string; observed_at: string }>;
   publishing: { eligible: boolean; score: number | null; reasons: string[]; evaluated_at: string | null; queue_count: number; click_count: number };
 };
 
-export type AdminShoppingPostSummary = { id: number; title: string; slug: string; post_type: string; status: string; is_featured: boolean; published_at: string | null; updated_at: string; product_count: number };
-export type AdminShoppingProduct = { id: number; position: number; name: string; slug: string; image_url: string; short_description: string; affiliate_url: string; displayed_price: string; original_price: string; currency: string; badge: string; pros: string; cons: string; is_active: boolean; expires_at: string | null };
-export type AdminShoppingPostDetail = AdminShoppingPostSummary & { excerpt: string; body: string; cover_image_url: string; seo_title: string; meta_description: string; meta_keywords: string; products: AdminShoppingProduct[] };
+export type AdminShoppingPostSummary = {
+  id: number;
+  title: string;
+  slug: string;
+  post_type: string;
+  status: string;
+  category: AdminCategory | null;
+  language: string | null;
+  short_description: string;
+  is_featured: boolean;
+  published_at: string | null;
+  updated_at: string;
+  product_count: number;
+};
+
+export type AdminShoppingProduct = {
+  id: number;
+  position: number;
+  name: string;
+  slug: string;
+  image_url: string;
+  short_description: string;
+  content: string;
+  category: AdminCategory | null;
+  language: string | null;
+  affiliate_url: string;
+  displayed_price: string;
+  original_price: string;
+  currency: string;
+  badge: string;
+  pros: string;
+  cons: string;
+  is_active: boolean;
+  expires_at: string | null;
+};
+
+export type AdminShoppingPostDetail = AdminShoppingPostSummary & {
+  excerpt: string;
+  body: string;
+  content: string;
+  cover_image_url: string;
+  seo_title: string;
+  meta_description: string;
+  meta_keywords: string;
+  products: AdminShoppingProduct[];
+};
+
 export type MediaAsset = { id: number; url: string; name: string; title: string; alt_text: string; content_type: string; size_bytes: number; created_at: string };
 
 function csrfToken(): string {
@@ -56,9 +147,22 @@ export async function ensureAdminCsrf(): Promise<AdminSession> { return request<
 export async function adminLogin(username: string, password: string): Promise<AdminSession> { await ensureAdminCsrf(); return request<AdminSession>("/auth/login/", { method: "POST", body: JSON.stringify({ username, password }) }); }
 export async function adminLogout(): Promise<void> { await request("/auth/logout/", { method: "POST", body: "{}" }); }
 export async function getDashboard(): Promise<DashboardPayload> { return request("/dashboard/"); }
+
+export async function getAdminCategories(scope: AdminCategoryScope): Promise<{ count: number; results: AdminCategory[] }> {
+  return request(`/categories/?scope=${encodeURIComponent(scope)}`);
+}
+export async function createAdminCategory(scope: AdminCategoryScope, payload: Record<string, unknown>): Promise<AdminCategory> {
+  return request(`/categories/?scope=${encodeURIComponent(scope)}`, { method: "POST", body: JSON.stringify(payload) });
+}
+export async function updateAdminCategory(id: string | number, payload: Record<string, unknown>): Promise<AdminCategory> {
+  return request(`/categories/${id}/`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+export async function deleteAdminCategory(id: string | number): Promise<void> { await request(`/categories/${id}/`, { method: "DELETE", body: "{}" }); }
+
 export async function getAdminCourses(q = ""): Promise<{ count: number; results: AdminCourseSummary[] }> { return request(`/courses/${q ? `?q=${encodeURIComponent(q)}` : ""}`); }
 export async function getAdminCourse(id: string | number): Promise<AdminCourseDetail> { return request(`/courses/${id}/`); }
 export async function updateAdminCourse(id: string | number, payload: Record<string, unknown>): Promise<AdminCourseDetail> { return request(`/courses/${id}/`, { method: "PATCH", body: JSON.stringify(payload) }); }
+
 export async function getAdminShoppingPosts(q = ""): Promise<{ count: number; results: AdminShoppingPostSummary[] }> { return request(`/shop/posts/${q ? `?q=${encodeURIComponent(q)}` : ""}`); }
 export async function createAdminShoppingPost(payload: Record<string, unknown>): Promise<AdminShoppingPostDetail> { return request("/shop/posts/", { method: "POST", body: JSON.stringify(payload) }); }
 export async function getAdminShoppingPost(id: string | number): Promise<AdminShoppingPostDetail> { return request(`/shop/posts/${id}/`); }

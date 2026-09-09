@@ -3,7 +3,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import scrapy
 from scrapy_playwright.page import PageMethod
 
-from discovery.scrapy_app.extractors import extract_udemy_free_records
+from discovery.scrapy_app.extractors import extract_udemy_course_image, extract_udemy_free_records
 
 
 class UdemyFreeSpider(scrapy.Spider):
@@ -47,7 +47,16 @@ class UdemyFreeSpider(scrapy.Spider):
             if self.item_limit and self._emitted >= self.item_limit:
                 return
             self._emitted += 1
-            yield record
+            if record.get("image_480x270"):
+                yield record
+                continue
+            yield scrapy.Request(
+                record["url"],
+                callback=self.parse_course_image,
+                errback=self.course_image_failed,
+                cb_kwargs={"record": record},
+                priority=10,
+            )
 
         if not records:
             self.logger.info(
@@ -63,6 +72,16 @@ class UdemyFreeSpider(scrapy.Spider):
             return
 
         yield self._page_request(page_number + 1)
+
+    def parse_course_image(self, response, record):
+        enriched = dict(record)
+        enriched["image_480x270"] = extract_udemy_course_image(response)
+        yield enriched
+
+    def course_image_failed(self, failure):
+        # Course metadata remains valuable even when the optional public detail
+        # image lookup is blocked, fails, or is disallowed by robots.txt.
+        yield dict(failure.request.cb_kwargs["record"])
 
     def _page_request(self, page_number: int):
         return scrapy.Request(

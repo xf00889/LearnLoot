@@ -27,9 +27,11 @@ export function ShoppingPostGrid({ posts }: { posts: ShoppingPostSummary[] }) {
             />
           ) : null}
           <div className="p-6">
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[color:var(--accent)]">
-              {post.post_type_label}
-            </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--accent)]">
+              <span>{post.post_type_label}</span>
+              {post.category ? <span>{post.category.name}</span> : null}
+              {post.language ? <span>{post.language}</span> : null}
+            </div>
             <h2 className="mt-3 text-2xl font-black tracking-tight">
               <Link href={`/shop/${post.slug}`}>{post.title}</Link>
             </h2>

@@ -134,7 +134,9 @@ export default async function ShoppingDetailPage({ params, searchParams }: Shopp
                       {product.badge ? <span className="rounded-full bg-[color:var(--accent)] px-3 py-1 text-sm font-bold text-white">{product.badge}</span> : null}
                     </div>
                     <h2 className="mt-4 text-3xl font-black tracking-tight">{product.name}</h2>
+                    {(product.category || product.language) ? <p className="mt-2 text-sm text-[color:var(--muted)]">{[product.category?.name, product.language].filter(Boolean).join(" · ")}</p> : null}
                     {product.short_description ? <p className="mt-4 leading-7 text-[color:var(--muted)]">{product.short_description}</p> : null}
+                    {product.content ? <div className="cms-rich-content mt-4 text-[color:var(--muted)]" dangerouslySetInnerHTML={{ __html: product.content }} /> : null}
 
                     {product.displayed_price ? (
                       <p className="mt-5 text-xl font-black">

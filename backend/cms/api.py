@@ -21,7 +21,7 @@ from publishing.models import PublicationQueueItem, TelegramPost
 from shopping.models import ShoppingClickEvent, ShoppingPost, ShoppingProduct
 from tracking.models import ClickEvent
 
-from .models import MediaAsset
+from .models import ContentCategory, MediaAsset
 from .sanitizer import sanitize_rich_html
 
 MAX_PAGE_SIZE = 100
@@ -110,6 +110,115 @@ def auth_logout(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"authenticated": False})
 
 
+def _category_payload(category: ContentCategory | None) -> dict | None:
+    if category is None:
+        return None
+    return {
+        "id": category.id,
+        "scope": category.scope,
+        "name": category.name,
+        "slug": category.slug,
+        "description": category.description,
+        "is_active": category.is_active,
+        "updated_at": category.updated_at.isoformat(),
+    }
+
+
+def _category_from_payload(value, *, scope: str) -> ContentCategory | None:
+    if value in (None, "", 0, "0"):
+        return None
+    try:
+        category_id = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Category must be a numeric ID or null.") from exc
+    try:
+        return ContentCategory.objects.get(pk=category_id, scope=scope)
+    except ContentCategory.DoesNotExist as exc:
+        raise ValueError("Selected category does not exist in the required scope.") from exc
+
+
+@require_http_methods(["GET", "POST"])
+@_staff_required
+def category_list(request: HttpRequest) -> JsonResponse:
+    scope = request.GET.get("scope", "").strip()
+    valid_scopes = {value for value, _ in ContentCategory.Scope.choices}
+    if scope not in valid_scopes:
+        return JsonResponse({"detail": "A valid category scope is required."}, status=400)
+
+    if request.method == "GET":
+        rows = list(ContentCategory.objects.filter(scope=scope).order_by("name", "id"))
+        return JsonResponse({"count": len(rows), "results": [_category_payload(category) for category in rows]})
+
+    try:
+        payload = _json_body(request)
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
+
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        return JsonResponse({"detail": "Category name is required."}, status=400)
+    category = ContentCategory(
+        scope=scope,
+        name=name,
+        slug=str(payload.get("slug", "")).strip() or slugify(name)[:140],
+        description=str(payload.get("description", "")).strip(),
+        is_active=bool(payload.get("is_active", True)),
+    )
+    try:
+        category.full_clean()
+        category.save()
+    except Exception as exc:
+        from django.core.exceptions import ValidationError
+        if isinstance(exc, ValidationError):
+            return JsonResponse({"detail": exc.message_dict}, status=400)
+        if isinstance(exc, IntegrityError):
+            return JsonResponse({"detail": "That category slug already exists in this section."}, status=409)
+        raise
+    return JsonResponse(_category_payload(category), status=201)
+
+
+@require_http_methods(["PATCH", "DELETE"])
+@_staff_required
+def category_detail(request: HttpRequest, category_id: int) -> JsonResponse:
+    try:
+        category = ContentCategory.objects.get(pk=category_id)
+    except ContentCategory.DoesNotExist:
+        return JsonResponse({"detail": "Category not found."}, status=404)
+
+    if request.method == "DELETE":
+        category.delete()
+        return JsonResponse({"deleted": True})
+
+    try:
+        payload = _json_body(request)
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
+    for key in {"name", "slug", "description", "is_active"}:
+        if key not in payload:
+            continue
+        value = payload[key]
+        if key == "is_active":
+            value = bool(value)
+        else:
+            value = str(value or "").strip()
+        setattr(category, key, value)
+    if not category.name:
+        return JsonResponse({"detail": "Category name is required."}, status=400)
+    if not category.slug:
+        category.slug = slugify(category.name)[:140]
+    try:
+        category.full_clean()
+        category.save()
+    except Exception as exc:
+        from django.core.exceptions import ValidationError
+        if isinstance(exc, ValidationError):
+            return JsonResponse({"detail": exc.message_dict}, status=400)
+        if isinstance(exc, IntegrityError):
+            return JsonResponse({"detail": "That category slug already exists in this section."}, status=409)
+        raise
+    return JsonResponse(_category_payload(category))
+
+
 @require_GET
 @_staff_required
 def dashboard(request: HttpRequest) -> JsonResponse:
@@ -135,6 +244,10 @@ def dashboard(request: HttpRequest) -> JsonResponse:
                 "telegram_failed": TelegramPost.objects.filter(status=TelegramPost.Status.FAILED).count(),
             },
             "media": {"assets": MediaAsset.objects.count()},
+            "categories": {
+                "courses": ContentCategory.objects.filter(scope=ContentCategory.Scope.COURSE).count(),
+                "affiliate": ContentCategory.objects.filter(scope=ContentCategory.Scope.AFFILIATE).count(),
+            },
             "discovery": {
                 "latest_status": latest_discovery.status if latest_discovery else None,
                 "latest_started_at": latest_discovery.started_at.isoformat() if latest_discovery else None,
@@ -153,6 +266,10 @@ def _course_summary(course: Course) -> dict:
         "external_id": course.external_id,
         "slug": course.slug,
         "status": course.status,
+        "thumbnail_url": course.thumbnail_url,
+        "category": _category_payload(course.category),
+        "language": course.language,
+        "short_description": course.short_description,
         "rating": str(course.rating) if course.rating is not None else None,
         "review_count": course.review_count,
         "last_checked_at": course.last_checked_at.isoformat() if course.last_checked_at else None,
@@ -164,7 +281,7 @@ def _course_summary(course: Course) -> dict:
 @require_GET
 @_staff_required
 def course_list(request: HttpRequest) -> JsonResponse:
-    queryset = Course.objects.select_related("provider").order_by("-updated_at", "-id")
+    queryset = Course.objects.select_related("provider", "category").order_by("-updated_at", "-id")
     query = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip()
     if query:
@@ -194,6 +311,10 @@ def _course_detail(request: HttpRequest, course: Course) -> dict:
         "cms": {
             "editorial_title": course.editorial_title,
             "editorial_description": course.editorial_description,
+            "content": course.editorial_description,
+            "short_description": course.short_description,
+            "category": _category_payload(course.category),
+            "language": course.language,
             "editorial_image_url": _file_url(request, course.editorial_image),
             "seo_title": course.seo_title,
             "meta_description": course.meta_description,
@@ -235,7 +356,7 @@ def _course_detail(request: HttpRequest, course: Course) -> dict:
 @_staff_required
 def course_detail(request: HttpRequest, course_id: int) -> JsonResponse:
     try:
-        course = Course.objects.select_related("provider").get(pk=course_id)
+        course = Course.objects.select_related("provider", "category").get(pk=course_id)
     except Course.DoesNotExist:
         return JsonResponse({"detail": "Course not found."}, status=404)
 
@@ -247,14 +368,24 @@ def course_detail(request: HttpRequest, course_id: int) -> JsonResponse:
     except ValueError as exc:
         return JsonResponse({"detail": str(exc)}, status=400)
 
-    allowed = {"status", "slug", "editorial_title", "editorial_description", "seo_title", "meta_description", "meta_keywords"}
+    allowed = {"status", "slug", "editorial_title", "editorial_description", "content", "short_description", "category_id", "language", "seo_title", "meta_description", "meta_keywords"}
     for key in allowed:
         if key not in payload:
             continue
         value = payload[key]
-        if key == "editorial_description":
-            value = sanitize_rich_html(str(value or ""))
-        elif key == "status":
+        if key in {"editorial_description", "content"}:
+            course.editorial_description = sanitize_rich_html(str(value or ""))
+            continue
+        if key == "category_id":
+            try:
+                course.category = _category_from_payload(value, scope=ContentCategory.Scope.COURSE)
+            except ValueError as exc:
+                return JsonResponse({"detail": str(exc)}, status=400)
+            continue
+        if key == "language":
+            course.language = str(value or "").strip() or None
+            continue
+        if key == "status":
             if value not in {choice for choice, _ in Course.Status.choices}:
                 return JsonResponse({"detail": "Invalid course status."}, status=400)
         else:
@@ -281,6 +412,9 @@ def _shopping_post_summary(post: ShoppingPost) -> dict:
         "slug": post.slug,
         "post_type": post.post_type,
         "status": post.status,
+        "category": _category_payload(post.category),
+        "language": post.language,
+        "short_description": post.excerpt,
         "is_featured": post.is_featured,
         "published_at": post.published_at.isoformat() if post.published_at else None,
         "updated_at": post.updated_at.isoformat(),
@@ -293,9 +427,13 @@ def _product_payload(request: HttpRequest, product: ShoppingProduct) -> dict:
         "id": product.id,
         "position": product.position,
         "name": product.name,
+        "title": product.name,
         "slug": product.slug,
         "image_url": _file_url(request, product.image),
         "short_description": product.short_description,
+        "content": product.content,
+        "category": _category_payload(product.category),
+        "language": product.language,
         "affiliate_url": product.affiliate_url,
         "displayed_price": str(product.displayed_price) if product.displayed_price is not None else "",
         "original_price": str(product.original_price) if product.original_price is not None else "",
@@ -312,7 +450,9 @@ def _shopping_post_detail(request: HttpRequest, post: ShoppingPost) -> dict:
     return {
         **_shopping_post_summary(post),
         "excerpt": post.excerpt,
+        "short_description": post.excerpt,
         "body": post.body,
+        "content": post.body,
         "cover_image_url": _file_url(request, post.cover_image),
         "seo_title": post.seo_title,
         "meta_description": post.meta_description,
@@ -325,7 +465,7 @@ def _shopping_post_detail(request: HttpRequest, post: ShoppingPost) -> dict:
 @_staff_required
 def shopping_post_list(request: HttpRequest) -> JsonResponse:
     if request.method == "GET":
-        queryset = ShoppingPost.objects.annotate(_product_count=Count("products")).order_by("-updated_at", "-id")
+        queryset = ShoppingPost.objects.select_related("category").annotate(_product_count=Count("products")).order_by("-updated_at", "-id")
         query = request.GET.get("q", "").strip()
         if query:
             queryset = queryset.filter(Q(title__icontains=query) | Q(slug__icontains=query))
@@ -343,6 +483,13 @@ def shopping_post_list(request: HttpRequest) -> JsonResponse:
     requested_slug = str(payload.get("slug", "")).strip()
     post = ShoppingPost(title=title, slug=requested_slug or slugify(title)[:320])
     post.post_type = str(payload.get("post_type", ShoppingPost.PostType.TOP_LIST))
+    post.excerpt = str(payload.get("short_description", payload.get("excerpt", ""))).strip()
+    post.body = sanitize_rich_html(str(payload.get("content", payload.get("body", "")) or ""))
+    post.language = str(payload.get("language", "")).strip() or None
+    try:
+        post.category = _category_from_payload(payload.get("category_id"), scope=ContentCategory.Scope.AFFILIATE)
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
     try:
         post.full_clean()
         post.save()
@@ -360,7 +507,7 @@ def shopping_post_list(request: HttpRequest) -> JsonResponse:
 @_staff_required
 def shopping_post_detail(request: HttpRequest, post_id: int) -> JsonResponse:
     try:
-        post = ShoppingPost.objects.prefetch_related("products").get(pk=post_id)
+        post = ShoppingPost.objects.select_related("category").prefetch_related("products__category").get(pk=post_id)
     except ShoppingPost.DoesNotExist:
         return JsonResponse({"detail": "Shopping post not found."}, status=404)
 
@@ -377,14 +524,27 @@ def shopping_post_detail(request: HttpRequest, post_id: int) -> JsonResponse:
     except ValueError as exc:
         return JsonResponse({"detail": str(exc)}, status=400)
 
-    fields = {"title", "slug", "post_type", "status", "excerpt", "body", "seo_title", "meta_description", "meta_keywords", "is_featured"}
+    fields = {"title", "slug", "post_type", "status", "excerpt", "short_description", "body", "content", "category_id", "language", "seo_title", "meta_description", "meta_keywords", "is_featured"}
     for key in fields:
         if key not in payload:
             continue
         value = payload[key]
-        if key == "body":
-            value = sanitize_rich_html(str(value or ""))
-        elif key == "is_featured":
+        if key in {"body", "content"}:
+            post.body = sanitize_rich_html(str(value or ""))
+            continue
+        if key in {"excerpt", "short_description"}:
+            post.excerpt = str(value or "").strip()
+            continue
+        if key == "category_id":
+            try:
+                post.category = _category_from_payload(value, scope=ContentCategory.Scope.AFFILIATE)
+            except ValueError as exc:
+                return JsonResponse({"detail": str(exc)}, status=400)
+            continue
+        if key == "language":
+            post.language = str(value or "").strip() or None
+            continue
+        if key == "is_featured":
             value = bool(value)
         elif key == "post_type":
             if value not in {choice for choice, _ in ShoppingPost.PostType.choices}:
@@ -430,9 +590,11 @@ def shopping_product_create(request: HttpRequest, post_id: int) -> JsonResponse:
         product = ShoppingProduct(
             post=post,
             position=int(payload.get("position", post.products.count() + 1)),
-            name=str(payload.get("name", "")).strip(),
-            slug=(str(payload.get("slug", "")).strip() or slugify(str(payload.get("name", "")).strip())[:220]),
+            name=str(payload.get("name", payload.get("title", ""))).strip(),
+            slug=(str(payload.get("slug", "")).strip() or slugify(str(payload.get("name", payload.get("title", ""))).strip())[:220]),
             short_description=str(payload.get("short_description", "")).strip(),
+            content=sanitize_rich_html(str(payload.get("content", "") or "")),
+            language=str(payload.get("language", "")).strip() or None,
             affiliate_url=str(payload.get("affiliate_url", "")).strip(),
             displayed_price=_decimal_or_none(payload.get("displayed_price")),
             original_price=_decimal_or_none(payload.get("original_price")),
@@ -442,6 +604,7 @@ def shopping_product_create(request: HttpRequest, post_id: int) -> JsonResponse:
             cons=str(payload.get("cons", "")).strip(),
             is_active=bool(payload.get("is_active", True)),
         )
+        product.category = _category_from_payload(payload.get("category_id"), scope=ContentCategory.Scope.AFFILIATE)
         product.full_clean(exclude=("image",))
         product.save()
     except (ValueError, TypeError) as exc:
@@ -460,7 +623,7 @@ def shopping_product_create(request: HttpRequest, post_id: int) -> JsonResponse:
 @_staff_required
 def shopping_product_detail(request: HttpRequest, product_id: int) -> JsonResponse:
     try:
-        product = ShoppingProduct.objects.select_related("post").get(pk=product_id)
+        product = ShoppingProduct.objects.select_related("post", "category").get(pk=product_id)
     except ShoppingProduct.DoesNotExist:
         return JsonResponse({"detail": "Shopping product not found."}, status=404)
     if request.method == "DELETE":
@@ -469,7 +632,7 @@ def shopping_product_detail(request: HttpRequest, product_id: int) -> JsonRespon
 
     try:
         payload = _json_body(request)
-        for key in {"position", "name", "slug", "short_description", "affiliate_url", "currency", "badge", "pros", "cons", "is_active"}:
+        for key in {"position", "name", "title", "slug", "short_description", "content", "category_id", "language", "affiliate_url", "currency", "badge", "pros", "cons", "is_active"}:
             if key not in payload:
                 continue
             value = payload[key]
@@ -477,6 +640,17 @@ def shopping_product_detail(request: HttpRequest, product_id: int) -> JsonRespon
                 value = int(value)
             elif key == "is_active":
                 value = bool(value)
+            elif key == "title":
+                product.name = str(value or "").strip()
+                continue
+            elif key == "content":
+                value = sanitize_rich_html(str(value or ""))
+            elif key == "category_id":
+                product.category = _category_from_payload(value, scope=ContentCategory.Scope.AFFILIATE)
+                continue
+            elif key == "language":
+                product.language = str(value or "").strip() or None
+                continue
             else:
                 value = str(value or "").strip()
             setattr(product, key, value)
