@@ -142,6 +142,7 @@ def _course_detail(request: HttpRequest, course: Course) -> dict[str, Any]:
     payload.update(
         {
             "description": course.public_description,
+            "description_html": course.public_description_html,
             "first_seen_at": course.first_seen_at.isoformat(),
             "last_seen_at": course.last_seen_at.isoformat(),
             "eligibility": {

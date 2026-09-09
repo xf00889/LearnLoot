@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "tracking",
     "shopping",
     "operations",
+    "cms",
 ]
 
 MIDDLEWARE = [
@@ -183,6 +184,8 @@ REST_FRAMEWORK = {
     ],
 }
 
+CORS_ALLOW_CREDENTIALS = True
+
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in env.str("CORS_ALLOWED_ORIGINS").split(",")
@@ -190,7 +193,10 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
-    for origin in env.str("DJANGO_CSRF_TRUSTED_ORIGINS", default="").split(",")
+    for origin in env.str(
+        "DJANGO_CSRF_TRUSTED_ORIGINS",
+        default=env.str("CORS_ALLOWED_ORIGINS", default=""),
+    ).split(",")
     if origin.strip()
 ]
 

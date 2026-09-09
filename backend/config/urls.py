@@ -8,7 +8,8 @@ from django.urls import include, path
 from .views import health, live, ready
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    path("django-admin/", admin.site.urls),
+    path("api/admin/", include("cms.urls")),
     path("api/health/", health, name="health"),
     path("api/health/live/", live, name="health-live"),
     path("api/health/ready/", ready, name="health-ready"),

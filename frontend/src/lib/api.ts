@@ -1,5 +1,5 @@
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api";
 
 export type HealthResponse = {
   status: string;
@@ -46,6 +46,7 @@ export type CourseSummary = {
 
 export type CourseDetail = CourseSummary & {
   description: string;
+  description_html: string;
   first_seen_at: string;
   last_seen_at: string;
   eligibility: {

@@ -90,9 +90,11 @@ export default async function CourseDetailPage({ params, searchParams }: CourseP
           <span>Free now</span><span>•</span><span>{course.provider.name}</span><span>•</span><span>Score {course.score}/100</span>
         </div>
         <h1 className="mt-5 text-4xl font-black tracking-tight sm:text-5xl">{course.title}</h1>
-        <p className="mt-5 text-lg leading-8 text-[color:var(--muted)]">
-          {course.description || "This free-course deal passed LearnLoot publication checks."}
-        </p>
+        {course.description_html ? (
+          <div className="cms-rich-content mt-5 text-lg text-[color:var(--muted)]" dangerouslySetInnerHTML={{ __html: course.description_html }} />
+        ) : (
+          <p className="mt-5 text-lg leading-8 text-[color:var(--muted)]">{course.description || "This free-course deal passed LearnLoot publication checks."}</p>
+        )}
 
         <div className="mt-8 grid gap-4 sm:grid-cols-3">
           <div className="rounded-2xl bg-[color:var(--surface)] p-4"><p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Rating</p><p className="mt-1 text-2xl font-black">{course.rating ?? "N/A"}</p></div>

@@ -1,6 +1,9 @@
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
+from django.utils.html import strip_tags
+
+from cms.sanitizer import sanitize_rich_html
 
 from providers.models import Provider
 
@@ -89,8 +92,16 @@ class Course(models.Model):
         return self.editorial_title.strip() or self.title
 
     @property
+    def public_description_html(self) -> str:
+        if self.editorial_description.strip():
+            return self.editorial_description.strip()
+        return ""
+
+    @property
     def public_description(self) -> str:
-        return self.editorial_description.strip() or self.description
+        if self.editorial_description.strip():
+            return strip_tags(self.editorial_description).strip()
+        return self.description
 
     @property
     def public_seo_title(self) -> str:
@@ -114,6 +125,11 @@ class Course(models.Model):
                 bool(self.social_image),
             )
         )
+
+
+    def save(self, *args, **kwargs):
+        self.editorial_description = sanitize_rich_html(self.editorial_description)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return self.public_title

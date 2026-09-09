@@ -5,6 +5,8 @@ from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
 
+from cms.sanitizer import sanitize_rich_html
+
 from .validators import validate_https_affiliate_url
 
 
@@ -60,6 +62,7 @@ class ShoppingPost(models.Model):
         return (self.meta_description.strip() or self.excerpt.strip() or self.title)[:320]
 
     def save(self, *args, **kwargs):
+        self.body = sanitize_rich_html(self.body)
         if not self.slug:
             self.slug = slugify(self.title)[:320]
         if self.status == self.Status.PUBLISHED and self.published_at is None:

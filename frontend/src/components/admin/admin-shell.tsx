@@ -1,0 +1,89 @@
+"use client";
+
+import DashboardOutlined from "@mui/icons-material/DashboardOutlined";
+import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
+import PhotoLibraryOutlined from "@mui/icons-material/PhotoLibraryOutlined";
+import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
+import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
+import MenuIcon from "@mui/icons-material/Menu";
+import {
+  AppBar, Box, CircularProgress, Divider, Drawer, IconButton, List, ListItemButton,
+  ListItemIcon, ListItemText, Toolbar, Typography, Button,
+} from "@mui/material";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { adminLogout, ensureAdminCsrf, type AdminUser } from "@/lib/admin-api";
+
+const drawerWidth = 236;
+const nav = [
+  { href: "/admin", label: "Dashboard", icon: <DashboardOutlined /> },
+  { href: "/admin/courses", label: "Courses", icon: <MenuBookOutlined /> },
+  { href: "/admin/shop", label: "Shop & Deals", icon: <ShoppingBagOutlined /> },
+  { href: "/admin/media", label: "Media Library", icon: <PhotoLibraryOutlined /> },
+];
+
+export function AdminShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [user, setUser] = useState<AdminUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    if (pathname === "/admin/login") return;
+
+    let cancelled = false;
+    ensureAdminCsrf()
+      .then((session) => {
+        if (cancelled) return;
+        if (!session.authenticated || !session.user) router.replace("/admin/login");
+        else setUser(session.user);
+      })
+      .catch(() => {
+        if (!cancelled) router.replace("/admin/login");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, router]);
+
+  if (pathname === "/admin/login") return <>{children}</>;
+  if (loading || !user) return <Box sx={{ minHeight: "100vh", display: "grid", placeItems: "center" }}><CircularProgress /></Box>;
+
+  const drawer = (
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <Toolbar sx={{ px: 2 }}><Typography fontWeight={900}>LearnLoot Admin</Typography></Toolbar>
+      <Divider />
+      <List sx={{ px: 1, py: 1 }}>
+        {nav.map((item) => <ListItemButton key={item.href} component={Link} href={item.href} selected={pathname === item.href || (item.href !== "/admin" && pathname.startsWith(`${item.href}/`))} sx={{ borderRadius: 1, mb: 0.5 }}><ListItemIcon sx={{ minWidth: 38 }}>{item.icon}</ListItemIcon><ListItemText primary={item.label} /></ListItemButton>)}
+      </List>
+      <Box sx={{ mt: "auto", p: 1 }}>
+        <ListItemButton component="a" href={`${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api"}`.replace(/\/api\/?$/, "/django-admin/")} sx={{ borderRadius: 1 }}><ListItemText primary="Django fallback" secondary="Emergency only" /></ListItemButton>
+      </Box>
+    </Box>
+  );
+
+  return (
+    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
+      <AppBar position="fixed" elevation={0} color="inherit" sx={{ borderBottom: 1, borderColor: "divider", ml: { md: `${drawerWidth}px` }, width: { md: `calc(100% - ${drawerWidth}px)` } }}>
+        <Toolbar>
+          <IconButton edge="start" onClick={() => setMobileOpen(true)} sx={{ display: { md: "none" }, mr: 1 }}><MenuIcon /></IconButton>
+          <Typography sx={{ flexGrow: 1, fontWeight: 800 }}>Content management</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mr: 2 }}>{user.username}</Typography>
+          <Button startIcon={<LogoutOutlined />} color="inherit" onClick={async () => { await adminLogout(); router.replace("/admin/login"); }}>Sign out</Button>
+        </Toolbar>
+      </AppBar>
+      <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}>
+        <Drawer variant="temporary" open={mobileOpen} onClose={() => setMobileOpen(false)} ModalProps={{ keepMounted: true }} sx={{ display: { xs: "block", md: "none" }, "& .MuiDrawer-paper": { width: drawerWidth } }}>{drawer}</Drawer>
+        <Drawer variant="permanent" open sx={{ display: { xs: "none", md: "block" }, "& .MuiDrawer-paper": { width: drawerWidth, boxSizing: "border-box" } }}>{drawer}</Drawer>
+      </Box>
+      <Box component="main" sx={{ flexGrow: 1, width: { md: `calc(100% - ${drawerWidth}px)` }, p: { xs: 2, md: 3 }, pt: { xs: 10, md: 11 } }}>{children}</Box>
+    </Box>
+  );
+}

@@ -237,3 +237,21 @@ Health probes are available at `/api/health/live/` and
 cache outage is reported as HTTP 200 with `status=degraded` because the public
 site can continue serving content while click-dedupe analytics are degraded. It
 never exposes credentials or raw exception details.
+
+
+## Phase 11 custom LearnLoot admin CMS
+
+LearnLoot now has a branded custom admin at `http://localhost:3000/admin` backed by staff-only Django session APIs under `/api/admin/`. The original Django admin remains available only as an emergency fallback at `/django-admin/` on the backend.
+
+The custom admin uses Material UI with a restrained 4px radius, responsive navigation, light/dark mode, course CMS editing, Shopee editorial post/product editing, SEO controls, click/publishing visibility, and a CMS media library. Scraped Udemy fields remain source-controlled while CMS overrides stay editable and persistent.
+
+Rich article/course content uses self-hosted CKEditor 5 open-source plugins and image upload through the staff-only media endpoint. Server-side HTML is sanitized with `nh3` before it is stored. CKEditor 5 v44+ requires a self-hosting license key; the example frontend configuration uses `GPL`, which is appropriate only when your distribution complies with the GPL. Use a commercial self-hosting key otherwise.
+
+Local custom-admin startup:
+
+1. Start Django: `python backend\manage.py runserver`
+2. Start Next.js: `cd frontend; npm run dev`
+3. Create a staff account if needed: `python backend\manage.py createsuperuser`
+4. Browse `http://localhost:3000/admin`
+
+The local CORS/CSRF examples allow both `localhost:3000` and `127.0.0.1:3000`. Keep production origins explicit.

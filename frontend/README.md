@@ -58,3 +58,10 @@ marked `rel="sponsored nofollow"`.
 Published shopping pages include an affiliate disclosure and structured data for
 Article, ItemList, and BreadcrumbList. Product descriptions and comparisons
 should remain original editorial content rather than copied merchant text.
+
+
+## Custom admin CMS (Phase 11)
+
+`/admin` is the LearnLoot custom Material UI CMS. It uses Django session authentication with `credentials: include`, CSRF protection, CKEditor 5 for rich text, and the staff-only `/api/admin/` endpoints. The admin is marked `noindex`. The editor is client-only (`next/dynamic` with `ssr: false`) because CKEditor relies on browser APIs.
+
+The example `NEXT_PUBLIC_CKEDITOR_LICENSE_KEY=GPL` declares GPL self-hosting. Replace it with an appropriate commercial key if the project cannot comply with GPL requirements.

@@ -52,3 +52,16 @@ body {
 a {
   text-decoration: none;
 }
+
+/* Phase 11 custom admin / CKEditor. Admin controls intentionally use low radius. */
+.learnloot-editor .ck.ck-editor { border-radius: 4px; }
+.learnloot-editor .ck.ck-toolbar { border-radius: 4px 4px 0 0 !important; }
+.learnloot-editor .ck.ck-editor__main > .ck-editor__editable { min-height: var(--editor-min-height, 320px); border-radius: 0 0 4px 4px !important; }
+.learnloot-editor .ck-content { font-family: var(--font-geist-sans), Arial, sans-serif; line-height: 1.7; }
+.cms-rich-content p { margin: 0 0 1rem; }
+.cms-rich-content h2, .cms-rich-content h3, .cms-rich-content h4 { margin: 1.5rem 0 0.75rem; font-weight: 800; }
+.cms-rich-content ul, .cms-rich-content ol { margin: 0 0 1rem 1.5rem; }
+.cms-rich-content blockquote { border-left: 3px solid var(--accent); margin: 1rem 0; padding-left: 1rem; }
+.cms-rich-content img { max-width: 100%; height: auto; }
+.cms-rich-content table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+.cms-rich-content th, .cms-rich-content td { border: 1px solid var(--border); padding: 0.6rem; text-align: left; }

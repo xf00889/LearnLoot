@@ -32,3 +32,4 @@ wcwidth==0.8.3
 Scrapy==2.18.0
 scrapy-playwright==0.0.48
 playwright==1.62.0
+nh3==0.3.6

@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
 import { JsonLd } from "@/components/json-ld";
+import { SiteChrome } from "@/components/site-chrome";
 import { SITE_DESCRIPTION, SITE_NAME, getSiteUrl } from "@/lib/seo";
 import "./globals.css";
 
@@ -10,7 +10,6 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 const siteUrl = getSiteUrl();
-const telegramChannelUrl = process.env.NEXT_PUBLIC_TELEGRAM_CHANNEL_URL?.trim();
 const googleVerification = process.env.GOOGLE_SITE_VERIFICATION?.trim();
 
 export const viewport: Viewport = {
@@ -87,42 +86,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     >
       <body className="flex min-h-full flex-col">
         <JsonLd data={[websiteJsonLd, organizationJsonLd]} />
-        <header className="border-b border-[color:var(--border)] bg-[color:var(--surface)]/80 backdrop-blur">
-          <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-4">
-            <Link className="text-lg font-black tracking-tight" href="/">
-              LearnLoot
-            </Link>
-            <div className="flex items-center gap-4 text-sm font-semibold text-[color:var(--muted)]">
-              <Link className="hover:text-[color:var(--foreground)]" href="/courses">
-                Courses
-              </Link>
-              <Link className="hover:text-[color:var(--foreground)]" href="/shop">
-                Shop & Deals
-              </Link>
-              {telegramChannelUrl ? (
-                <a
-                  className="hover:text-[color:var(--foreground)]"
-                  href={telegramChannelUrl}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  Telegram Channel
-                </a>
-              ) : null}
-            </div>
-          </nav>
-        </header>
-        {children}
-        <footer className="mt-auto border-t border-[color:var(--border)] px-5 py-8 text-center text-sm text-[color:var(--muted)]">
-          <p>
-            LearnLoot verifies free-course opportunities and publishes independently
-            written shopping guides.
-          </p>
-          <p className="mt-2">
-            Some shopping links are affiliate links; LearnLoot may earn a commission
-            from qualifying purchases at no additional cost to you.
-          </p>
-        </footer>
+        <SiteChrome>{children}</SiteChrome>
       </body>
     </html>
   );

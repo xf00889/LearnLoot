@@ -99,11 +99,6 @@ export default async function ShoppingDetailPage({ params, searchParams }: Shopp
     ],
   };
 
-  const bodyParagraphs = post.body
-    .split(/\n\s*\n/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
-
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-12">
       <JsonLd data={[articleJsonLd, itemListJsonLd, breadcrumbJsonLd]} />
@@ -120,11 +115,7 @@ export default async function ShoppingDetailPage({ params, searchParams }: Shopp
           </div>
         </header>
 
-        {bodyParagraphs.length ? (
-          <section className="prose-copy mx-auto max-w-3xl py-10">
-            {bodyParagraphs.map((paragraph, index) => <p className="mb-5 leading-8 text-[color:var(--muted)]" key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>)}
-          </section>
-        ) : null}
+        {post.body ? <section className="cms-rich-content mx-auto max-w-3xl py-10 text-[color:var(--muted)]" dangerouslySetInnerHTML={{ __html: post.body }} /> : null}
 
         <section className="space-y-7" aria-label="Recommended products">
           {post.products.map((product) => {
