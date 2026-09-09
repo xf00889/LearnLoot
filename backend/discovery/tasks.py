@@ -21,6 +21,7 @@ def run_provider_discovery(
     provider_id: int,
     source_url: str = "",
     item_limit: int | None = None,
+    skip_existing: bool = False,
 ) -> dict[str, int | str]:
     try:
         provider = Provider.objects.get(pk=provider_id)
@@ -38,7 +39,12 @@ def run_provider_discovery(
             "records_failed": 0,
         }
 
-    target = build_discovery_target(provider, source_url, item_limit)
+    target = build_discovery_target(
+        provider,
+        source_url,
+        item_limit,
+        skip_existing=skip_existing,
+    )
     run = execute_discovery(provider, target.connector, target.source)
 
     if run.status == DiscoveryRun.Status.SUCCEEDED:
@@ -59,6 +65,8 @@ def queue_provider_discovery(
     provider: Provider,
     source_url: str = "",
     item_limit: int | None = None,
+    *,
+    skip_existing: bool = False,
 ) -> tuple[str, str]:
     """Queue one ready provider unless a recent discovery is still running."""
 
@@ -81,8 +89,13 @@ def queue_provider_discovery(
         return "not_ready", detail
 
     task = (
-        run_provider_discovery.delay(provider.pk, source_url, item_limit)
-        if source_url or item_limit is not None
+        run_provider_discovery.delay(
+            provider.pk,
+            source_url,
+            item_limit,
+            skip_existing,
+        )
+        if source_url or item_limit is not None or skip_existing
         else run_provider_discovery.delay(provider.pk)
     )
     return "queued", str(getattr(task, "id", "") or "")

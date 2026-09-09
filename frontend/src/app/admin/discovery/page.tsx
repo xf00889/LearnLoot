@@ -54,6 +54,7 @@ function displayDate(value: string | null): string {
 export default function AdminDiscoveryPage() {
   const [runs, setRuns] = useState<AdminDiscoveryRun[]>([]);
   const [courseCount, setCourseCount] = useState("");
+  const [topic, setTopic] = useState("");
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [selectedRun, setSelectedRun] = useState<AdminDiscoveryRunDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,10 +117,10 @@ export default function AdminDiscoveryPage() {
     setRunError("");
     setMessage("");
     try {
-      const result = await queueAdminDiscovery(requestedCount);
+      const result = await queueAdminDiscovery(requestedCount, topic);
       setMessage(result.worker_started
-        ? `A local Celery worker was started and up to ${result.course_count} unique free courses were queued. This page refreshes automatically.`
-        : `Up to ${result.course_count} unique free courses were queued. The Celery worker will process them in the background; this page refreshes automatically.`);
+        ? `A local Celery worker was started for ${result.search_filters.label}. LearnLoot will skip courses already stored and continue looking for up to ${result.course_count} new courses.`
+        : `Queued ${result.search_filters.label}. LearnLoot will skip courses already stored and continue looking for up to ${result.course_count} new courses.`);
       setRunDialogOpen(false);
       await loadRuns();
     } catch (value) {
@@ -231,20 +232,34 @@ export default function AdminDiscoveryPage() {
       <Dialog open={runDialogOpen} onClose={queuing ? undefined : () => setRunDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Run Udemy scraper</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>Choose how many free English SQL courses to collect from Udemy. Duplicate listings are skipped.</DialogContentText>
+          <DialogContentText sx={{ mb: 2 }}>Choose an optional Udemy topic. LearnLoot uses robots-compatible public free-topic pages instead of blocked search URL facets.</DialogContentText>
           {runError ? <Alert severity="error" sx={{ mb: 2 }}>{runError}</Alert> : null}
-          <Chip size="small" color="success" variant="outlined" label="Free courses only" sx={{ mb: 2 }} />
-          <TextField
-            fullWidth
-            autoFocus
-            type="number"
-            label="Number of courses to scrape"
-            value={courseCount}
-            onChange={(event) => setCourseCount(event.target.value)}
-            error={courseCount !== "" && !courseCountIsValid}
-            helperText="Enter a whole number from 1 to 5000. Existing and repeated courses will not be duplicated."
-            slotProps={{ htmlInput: { min: 1, max: 5000, step: 1 } }}
-          />
+          <Stack direction="row" gap={1} flexWrap="wrap" sx={{ mb: 2 }}>
+            <Chip size="small" color="success" variant="outlined" label="Price: Free" />
+            <Chip size="small" color="info" variant="outlined" label="Language: English" />
+            <Chip size="small" variant="outlined" label="Certification Prep: later" />
+          </Stack>
+          <Stack spacing={2}>
+            <TextField
+              fullWidth
+              autoFocus
+              label="Topic"
+              placeholder="Python, SQL, JavaScript..."
+              value={topic}
+              onChange={(event) => setTopic(event.target.value)}
+              helperText="Leave blank for all free topics. For example, Python uses /topic/python/free/ rather than /courses/search/?..."
+            />
+            <TextField
+              fullWidth
+              type="number"
+              label="Number of new courses to scrape"
+              value={courseCount}
+              onChange={(event) => setCourseCount(event.target.value)}
+              error={courseCount !== "" && !courseCountIsValid}
+              helperText="Enter 1 to 5000. Courses already stored in LearnLoot are skipped before this limit is counted."
+              slotProps={{ htmlInput: { min: 1, max: 5000, step: 1 } }}
+            />
+          </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setRunDialogOpen(false)} disabled={queuing}>Cancel</Button>

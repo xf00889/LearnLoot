@@ -35,9 +35,19 @@ class ScrapyUdemySource:
         max_pages: int,
         item_limit: int,
         render_wait_ms: int,
+        language: str = "en",
+        exclude_urls: Iterable[str] = (),
     ) -> Iterable[dict[str, Any]]:
         with tempfile.TemporaryDirectory(prefix="learnloot-udemy-scrapy-") as temp_dir:
             output_path = Path(temp_dir) / "courses.jsonl"
+            exclude_path = Path(temp_dir) / "exclude-course-urls.json"
+            exclude_payload = sorted(
+                {str(value).strip() for value in exclude_urls if str(value).strip()}
+            )
+            exclude_path.write_text(
+                json.dumps(exclude_payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
             command = [
                 self.python_executable,
                 "-m",
@@ -52,6 +62,10 @@ class ScrapyUdemySource:
                 f"item_limit={item_limit}",
                 "-a",
                 f"render_wait_ms={render_wait_ms}",
+                "-a",
+                f"language={language}",
+                "-a",
+                f"exclude_file={exclude_path}",
                 "-O",
                 str(output_path),
             ]

@@ -176,7 +176,7 @@ export async function adminLogout(): Promise<void> { await request("/auth/logout
 export async function getDashboard(): Promise<DashboardPayload> { return request("/dashboard/"); }
 export async function getAdminDiscoveryRuns(): Promise<{ count: number; results: AdminDiscoveryRun[]; filters: { default_course_count: number } }> { return request("/discovery/runs/"); }
 export async function getAdminDiscoveryRun(id: string | number): Promise<AdminDiscoveryRunDetail> { return request(`/discovery/runs/${id}/`); }
-export async function queueAdminDiscovery(courseCount: number): Promise<{ queued: boolean; task_id: string; worker_started: boolean; course_count: number; provider: AdminDiscoveryProvider; source_url: string; search_filters: AdminDiscoverySearchFilters }> { return request("/discovery/runs/queue/", { method: "POST", body: JSON.stringify({ course_count: courseCount }) }); }
+export async function queueAdminDiscovery(courseCount: number, topic = "", certificationOnly = false): Promise<{ queued: boolean; task_id: string; worker_started: boolean; course_count: number; provider: AdminDiscoveryProvider; source_url: string; search_filters: AdminDiscoverySearchFilters }> { return request("/discovery/runs/queue/", { method: "POST", body: JSON.stringify({ course_count: courseCount, topic, certification_only: certificationOnly }) }); }
 
 export async function getAdminCategories(scope: AdminCategoryScope): Promise<{ count: number; results: AdminCategory[] }> {
   return request(`/categories/?scope=${encodeURIComponent(scope)}`);

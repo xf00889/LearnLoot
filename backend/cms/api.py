@@ -21,9 +21,8 @@ from discovery.models import DiscoveryObservation, DiscoveryRun
 from discovery.registry import safe_source_for_display
 from discovery.tasks import queue_provider_discovery
 from discovery.udemy_catalog import (
-    UDEMY_DEFAULT_SEARCH_URL,
+    build_udemy_discovery_source,
     discovery_filters_for_source,
-    normalize_udemy_search_source,
 )
 from discovery.worker import ensure_local_discovery_worker
 from pricing.models import CoursePrice
@@ -317,7 +316,12 @@ def discovery_run_create(request: HttpRequest) -> JsonResponse:
             raise ValueError("Number of courses must be a whole number.")
         if not 1 <= course_count <= 5000:
             raise ValueError("Number of courses must be between 1 and 5000.")
-        source_url = normalize_udemy_search_source(UDEMY_DEFAULT_SEARCH_URL)
+        topic = str(payload.get("topic", "") or "").strip()
+        certification_only = bool(payload.get("certification_only", False))
+        source_url = build_udemy_discovery_source(
+            topic=topic,
+            certification_only=certification_only,
+        )
         search_filters = discovery_filters_for_source(source_url)
     except ValueError as exc:
         return JsonResponse({"detail": str(exc)}, status=400)
@@ -328,7 +332,12 @@ def discovery_run_create(request: HttpRequest) -> JsonResponse:
 
     try:
         worker_status = ensure_local_discovery_worker()
-        status, detail = queue_provider_discovery(provider, source_url, course_count)
+        status, detail = queue_provider_discovery(
+            provider,
+            source_url,
+            course_count,
+            skip_existing=True,
+        )
     except Exception:
         logger.exception("Unable to start or reach the Celery discovery worker")
         return JsonResponse(

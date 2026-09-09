@@ -7,10 +7,14 @@ from scrapy.exceptions import CloseSpider
 from scrapy.http import HtmlResponse, Request
 
 from discovery.scrapy_app import settings
-from discovery.scrapy_app.extractors import extract_udemy_course_image, extract_udemy_free_records
+from discovery.scrapy_app.extractors import (
+    extract_udemy_course_image,
+    extract_udemy_course_language,
+    extract_udemy_free_records,
+)
 from discovery.scrapy_app.runner import ScrapyCrawlerError, ScrapyUdemySource
 from discovery.scrapy_app.spiders.udemy_free import UdemyFreeSpider
-from discovery.udemy_catalog import UDEMY_DEFAULT_SEARCH_URL
+from discovery.udemy_catalog import UDEMY_DEFAULT_SEARCH_URL, build_udemy_discovery_source
 
 
 RENDERED_FIXTURE = """
@@ -259,21 +263,39 @@ def test_spider_builds_bounded_playwright_request():
 
     request = spider._page_request(1)
 
-    assert request.url == f"{UDEMY_DEFAULT_SEARCH_URL}&p=1"
+    assert request.url == f"{UDEMY_DEFAULT_SEARCH_URL}?p=1"
     assert request.meta["playwright"] is True
     assert request.meta["learnloot_page_number"] == 1
     assert len(request.meta["playwright_page_methods"]) == 1
 
 
-def test_spider_preserves_search_filters_while_paginating():
-    source = "https://www.udemy.com/courses/search/?q=javascript&price=price-free&lang=en"
+def test_spider_paginates_public_free_catalog_with_allowed_page_facet():
     spider = UdemyFreeSpider(
-        source_url=source,
+        source_url=UDEMY_DEFAULT_SEARCH_URL,
         max_pages="2",
         render_wait_ms="0",
     )
 
-    assert spider._page_request(2).url == f"{source}&p=2"
+    assert spider._page_request(2).url == f"{UDEMY_DEFAULT_SEARCH_URL}?p=2"
+
+
+def test_spider_paginates_public_topic_free_page_with_allowed_page_facet():
+    source = build_udemy_discovery_source(topic="Python")
+    spider = UdemyFreeSpider(source_url=source, max_pages="2", render_wait_ms="0")
+
+    assert source == "https://www.udemy.com/topic/python/free/"
+    assert spider._page_request(2).url == "https://www.udemy.com/topic/python/free/?p=2"
+
+
+def test_spider_rejects_legacy_faceted_search_url_before_live_crawl():
+    with pytest.raises(ValueError, match="courses/free"):
+        UdemyFreeSpider(
+            source_url=(
+                "https://www.udemy.com/courses/search/"
+                "?q=python&price=price-free&lang=en"
+            ),
+            render_wait_ms="0",
+        )
 
 
 def test_spider_paginates_only_after_finding_course_cards():
@@ -284,18 +306,18 @@ def test_spider_paginates_only_after_finding_course_cards():
     records = [item for item in outputs if isinstance(item, dict)]
     requests = [item for item in outputs if isinstance(item, Request)]
 
-    assert len(records) == 1
-    assert records[0]["title"] == "Python for Beginners"
+    assert records == []
     assert {request.url for request in requests} == {
+        "https://www.udemy.com/course/python-for-beginners/",
         "https://www.udemy.com/course/javascript-basics/",
-        f"{UDEMY_DEFAULT_SEARCH_URL}&p=2",
+        f"{UDEMY_DEFAULT_SEARCH_URL}?p=2",
     }
 
 
 def test_spider_stops_when_udemy_presents_an_access_challenge():
     response = HtmlResponse(
-        url=f"{UDEMY_DEFAULT_SEARCH_URL}&p=1",
-        request=Request(url=f"{UDEMY_DEFAULT_SEARCH_URL}&p=1"),
+        url=f"{UDEMY_DEFAULT_SEARCH_URL}?p=1",
+        request=Request(url=f"{UDEMY_DEFAULT_SEARCH_URL}?p=1"),
         body=b"<html><head><title>Just a moment...</title></head></html>",
         encoding="utf-8",
     )
@@ -323,9 +345,36 @@ def test_spider_skips_courses_repeated_on_later_pages():
         for item in second_page
         if isinstance(item, Request) and "/course/" in item.url
     }
-    assert first_detail_urls == {"https://www.udemy.com/course/javascript-basics/"}
+    assert first_detail_urls == {
+        "https://www.udemy.com/course/python-for-beginners/",
+        "https://www.udemy.com/course/javascript-basics/",
+    }
     assert second_detail_urls == set()
     assert not any(isinstance(item, dict) for item in second_page)
+
+
+def test_spider_skips_courses_already_stored_before_counting_limit(tmp_path):
+    exclude_file = tmp_path / "exclude.json"
+    exclude_file.write_text(
+        json.dumps(["https://www.udemy.com/course/python-for-beginners/"]),
+        encoding="utf-8",
+    )
+    spider = UdemyFreeSpider(
+        max_pages="2",
+        item_limit="1",
+        render_wait_ms="0",
+        exclude_file=str(exclude_file),
+    )
+
+    outputs = list(spider.parse(rendered_response()))
+    detail_urls = {
+        item.url
+        for item in outputs
+        if isinstance(item, Request) and "/course/" in item.url
+    }
+
+    assert detail_urls == {"https://www.udemy.com/course/javascript-basics/"}
+    assert f"{UDEMY_DEFAULT_SEARCH_URL}?p=2" in {item.url for item in outputs if isinstance(item, Request)}
 
 
 def test_thumbnail_prefers_largest_lazy_responsive_candidate():
@@ -356,6 +405,24 @@ def test_public_course_page_image_metadata_is_used_as_fallback():
     assert extract_udemy_course_image(response) == "https://img-c.udemycdn.com/course/750x422/fallback.jpg"
 
 
+def test_public_course_page_language_is_read_without_lang_query_facet():
+    html = '<html><body><div data-purpose="lead-course-locale">English</div></body></html>'
+    url = "https://www.udemy.com/course/python-course/"
+    response = HtmlResponse(url=url, request=Request(url=url), body=html.encode(), encoding="utf-8")
+
+    assert extract_udemy_course_language(response) == "English"
+
+
+def test_spider_filters_non_english_course_from_public_detail_page():
+    spider = UdemyFreeSpider(max_pages="1", render_wait_ms="0", language="en")
+    record = extract_udemy_free_records(rendered_response())[0]
+    url = record["url"]
+    html = '<html><body><div data-purpose="lead-course-locale">Spanish</div></body></html>'
+    response = HtmlResponse(url=url, request=Request(url=url), body=html.encode(), encoding="utf-8")
+
+    assert list(spider.parse_course_detail(response, record)) == []
+
+
 def test_spider_enriches_missing_catalog_image_from_public_course_page():
     spider = UdemyFreeSpider(max_pages="1", render_wait_ms="0")
     outputs = list(spider.parse(rendered_response()))
@@ -363,7 +430,7 @@ def test_spider_enriches_missing_catalog_image_from_public_course_page():
         item for item in outputs
         if isinstance(item, Request) and item.url == "https://www.udemy.com/course/javascript-basics/"
     )
-    html = '<html><head><meta name="twitter:image" content="https://img-c.udemycdn.com/course/480x270/javascript.jpg"></head></html>'
+    html = '<html><head><meta name="twitter:image" content="https://img-c.udemycdn.com/course/480x270/javascript.jpg"></head><body><div data-purpose="lead-course-locale">English</div></body></html>'
     response = HtmlResponse(
         url=detail_request.url,
         request=detail_request,
@@ -402,6 +469,8 @@ def test_scrapy_runner_uses_isolated_subprocess_and_reads_jsonl(tmp_path):
             max_pages=1,
             item_limit=5,
             render_wait_ms=2500,
+            language="en",
+            exclude_urls=("https://www.udemy.com/course/existing/",),
         )
     )
 

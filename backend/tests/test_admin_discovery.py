@@ -52,9 +52,57 @@ def test_admin_can_queue_requested_free_courses_without_running_scraper(staff_cl
     assert response.json()["worker_started"] is True
     assert response.json()["course_count"] == 75
     assert response.json()["source_url"] == UDEMY_DEFAULT_SEARCH_URL
-    assert response.json()["search_filters"]["label"] == "SQL courses · English · Free"
-    delay.assert_called_once_with(provider.pk, UDEMY_DEFAULT_SEARCH_URL, 75)
+    assert response.json()["search_filters"]["label"] == "All topics · English · Free"
+    delay.assert_called_once_with(provider.pk, UDEMY_DEFAULT_SEARCH_URL, 75, True)
     assert DiscoveryRun.objects.count() == 0
+
+
+@pytest.mark.django_db
+@override_settings(LEARNLOOT_UDEMY_DISCOVERY_ACCESS_APPROVED=True)
+def test_admin_queues_selected_topic_on_public_free_topic_path(staff_client, provider):
+    with patch("cms.api.ensure_local_discovery_worker", return_value="available"), patch(
+        "discovery.tasks.run_provider_discovery.delay",
+        return_value=SimpleNamespace(id="task-python"),
+    ) as delay:
+        response = staff_client.post(
+            "/api/admin/discovery/runs/queue/",
+            data=json.dumps({"course_count": 25, "topic": "Python"}),
+            content_type="application/json",
+        )
+
+    assert response.status_code == 202
+    assert response.json()["source_url"] == "https://www.udemy.com/topic/python/free/"
+    assert response.json()["search_filters"] == {
+        "label": "Python · English · Free",
+        "query": "",
+        "topic": "Python",
+        "language": "English",
+        "price": "Free",
+        "certification_only": False,
+    }
+    delay.assert_called_once_with(
+        provider.pk,
+        "https://www.udemy.com/topic/python/free/",
+        25,
+        True,
+    )
+
+
+@pytest.mark.django_db
+@override_settings(LEARNLOOT_UDEMY_DISCOVERY_ACCESS_APPROVED=True)
+def test_admin_rejects_certification_prep_until_free_detection_is_safe(staff_client, provider):
+    response = staff_client.post(
+        "/api/admin/discovery/runs/queue/",
+        data=json.dumps({
+            "course_count": 10,
+            "topic": "Python",
+            "certification_only": True,
+        }),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert "Certification Prep discovery is not enabled yet" in response.json()["detail"]
 
 
 @pytest.mark.django_db
@@ -183,7 +231,7 @@ def test_admin_lists_discovery_runs_and_observations(staff_client, provider):
     assert listing.json()["filters"]["default_course_count"] == 100
     assert listing.json()["results"][0]["id"] == run.pk
     assert listing.json()["results"][0]["source"] == "https://www.udemy.com/courses/free/"
-    assert listing.json()["results"][0]["search_filters"]["label"] == "Legacy free catalog"
+    assert listing.json()["results"][0]["search_filters"]["label"] == "All topics · English · Free"
     assert detail.status_code == 200
     assert detail.json()["observations"]["count"] == 2
     assert detail.json()["observations"]["results"][0]["course"] == {

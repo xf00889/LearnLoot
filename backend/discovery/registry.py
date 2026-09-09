@@ -3,6 +3,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
 
+from courses.models import Course
 from providers.models import Provider
 
 from .providers.base import CourseProvider, ProviderAccessError
@@ -52,11 +53,20 @@ def build_discovery_target(
     provider: Provider,
     source_url: str = "",
     item_limit: int | None = None,
+    *,
+    skip_existing: bool = False,
 ) -> DiscoveryTarget:
     config = get_discovery_provider_config(provider.slug)
     if item_limit is not None:
         config = replace(config, item_limit=item_limit)
     source = normalize_udemy_search_source(source_url or config.source)
+    exclude_urls: tuple[str, ...] = ()
+    if skip_existing:
+        exclude_urls = tuple(
+            Course.objects.filter(provider=provider)
+            .exclude(canonical_url="")
+            .values_list("canonical_url", flat=True)
+        )
     connector = UdemyFreeCourseProvider(
         UdemyFreeConfig(
             access_approved=config.access_approved,
@@ -65,6 +75,8 @@ def build_discovery_target(
             render_wait_ms=config.render_wait_ms,
             currency=config.currency,
             catalog_page_url=source,
+            language="en",
+            exclude_urls=exclude_urls,
         )
     )
     return DiscoveryTarget(connector=connector, source=source, config=config)

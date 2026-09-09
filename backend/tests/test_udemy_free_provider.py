@@ -22,13 +22,15 @@ class StubCrawler:
         self.records = list(records)
         self.calls = []
 
-    def crawl(self, source, *, max_pages, item_limit, render_wait_ms):
+    def crawl(self, source, *, max_pages, item_limit, render_wait_ms, language="en", exclude_urls=()):
         self.calls.append(
             {
                 "source": source,
                 "max_pages": max_pages,
                 "item_limit": item_limit,
                 "render_wait_ms": render_wait_ms,
+                "language": language,
+                "exclude_urls": tuple(exclude_urls),
             }
         )
         yield from self.records
@@ -72,11 +74,18 @@ def test_udemy_provider_requires_explicit_access_acknowledgement():
         connector.validate_access()
 
 
-def test_udemy_provider_accepts_only_filtered_free_english_search_source():
+def test_udemy_provider_accepts_only_public_free_catalog_source():
     connector, _crawler = build_connector([])
 
-    with pytest.raises(ValueError, match="courses/search"):
+    with pytest.raises(ValueError, match="courses/free"):
         list(connector.discover("https://www.udemy.com/courses/development/"))
+
+    with pytest.raises(ValueError, match="courses/free"):
+        list(
+            connector.discover(
+                "https://www.udemy.com/courses/search/?q=python&price=price-free"
+            )
+        )
 
 
 def test_udemy_provider_delegates_discovery_to_scrapy_runner():
@@ -91,6 +100,8 @@ def test_udemy_provider_delegates_discovery_to_scrapy_runner():
             "max_pages": 3,
             "item_limit": 10,
             "render_wait_ms": 3500,
+            "language": "en",
+            "exclude_urls": (),
         }
     ]
 

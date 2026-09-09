@@ -313,10 +313,7 @@ LEARNLOOT_UDEMY_DISCOVERY_ACCESS_APPROVED = env.bool(
 )
 LEARNLOOT_UDEMY_DISCOVERY_SOURCE_URL = env.str(
     "LEARNLOOT_UDEMY_DISCOVERY_SOURCE_URL",
-    default=(
-        "https://www.udemy.com/courses/search/"
-        "?q=sql+course&src=sac&price=price-free&lang=en"
-    ),
+    default="https://www.udemy.com/courses/free/",
 )
 LEARNLOOT_UDEMY_DISCOVERY_MAX_PAGES = env.int(
     "LEARNLOOT_UDEMY_DISCOVERY_MAX_PAGES",

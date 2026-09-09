@@ -19,6 +19,8 @@ class UdemyFreeConfig:
     render_wait_ms: int = 3500
     currency: str = "USD"
     catalog_page_url: str = UDEMY_DEFAULT_SEARCH_URL
+    language: str = "en"
+    exclude_urls: tuple[str, ...] = ()
 
 
 class UdemyFreeCourseProvider(CourseProvider):
@@ -50,6 +52,8 @@ class UdemyFreeCourseProvider(CourseProvider):
         currency = self.config.currency.strip().upper()
         if len(currency) != 3 or not currency.isalpha():
             raise ProviderAccessError("currency must be a three-letter code")
+        if self.config.language.strip().lower() not in {"", "en"}:
+            raise ProviderAccessError("Udemy discovery currently supports English filtering only")
 
         self._validate_catalog_source(self.config.catalog_page_url)
 
@@ -61,6 +65,8 @@ class UdemyFreeCourseProvider(CourseProvider):
             max_pages=self.config.max_pages,
             item_limit=self.config.item_limit,
             render_wait_ms=self.config.render_wait_ms,
+            language=self.config.language,
+            exclude_urls=self.config.exclude_urls,
         ):
             if not isinstance(raw_course, Mapping):
                 raise ValueError("Udemy Scrapy records must be objects")

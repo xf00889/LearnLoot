@@ -64,29 +64,74 @@ def test_registered_udemy_target_uses_an_admin_course_limit(provider):
     with override_settings(**READY_SETTINGS):
         target = build_discovery_target(provider, source, 75)
 
-    assert target.source == UDEMY_DEFAULT_SEARCH_URL
+    assert target.source == "https://www.udemy.com/topic/javascript/free/"
     assert target.config.item_limit == 75
     assert target.connector.config.catalog_page_url == target.source
 
 
-def test_udemy_search_source_requires_the_free_filter():
+@pytest.mark.django_db
+def test_manual_new_only_target_snapshots_existing_course_urls(provider):
+    Course.objects.create(
+        provider=provider,
+        external_id="existing-1",
+        title="Existing",
+        slug="existing",
+        canonical_url="https://www.udemy.com/course/existing/",
+    )
+    with override_settings(**READY_SETTINGS):
+        target = build_discovery_target(provider, item_limit=10, skip_existing=True)
+
+    assert target.connector.config.exclude_urls == (
+        "https://www.udemy.com/course/existing/",
+    )
+
+
+def test_legacy_udemy_search_source_requires_the_free_filter():
     with pytest.raises(ValueError, match="Price set to Free"):
         normalize_udemy_search_source(
             "https://www.udemy.com/courses/search/?q=python"
         )
 
 
-def test_udemy_search_source_uses_the_fixed_sql_free_english_url():
+def test_legacy_filtered_search_source_normalizes_to_public_topic_free_path():
     source = normalize_udemy_search_source(
-        f"{UDEMY_DEFAULT_SEARCH_URL}&q=python&lang=en&cert_topic=true",
+        "https://www.udemy.com/courses/search/?q=python&price=price-free&lang=en",
     )
 
     filters = discovery_filters_for_source(source)
-    assert source == UDEMY_DEFAULT_SEARCH_URL
-    assert filters["label"] == "SQL courses · English · Free"
-    assert filters["query"] == "sql course"
+    assert source == "https://www.udemy.com/topic/python/free/"
+    assert filters["label"] == "Python · English · Free"
+    assert filters["query"] == ""
     assert filters["language"] == "English"
     assert filters["certification_only"] is False
+
+
+def test_legacy_udemy_numeric_topic_and_certification_facets_are_not_silently_dropped():
+    with pytest.raises(ValueError, match="courseLabel IDs"):
+        normalize_udemy_search_source(
+            "https://www.udemy.com/courses/search/?q=sql+course&src=sac&price=price-free&lang=en&courseLabel=7380"
+        )
+
+    with pytest.raises(ValueError, match="Certification Prep discovery is not enabled yet"):
+        normalize_udemy_search_source(
+            "https://www.udemy.com/courses/search/?q=sql+course&src=sac&price=price-free&lang=en&cert_topic=true"
+        )
+
+
+def test_filter_label_preserves_common_topic_brand_casing():
+    source = normalize_udemy_search_source(
+        "https://www.udemy.com/courses/search/?q=sql+course&price=price-free&lang=en",
+    )
+
+    assert source == "https://www.udemy.com/topic/sql/free/"
+    assert discovery_filters_for_source(source)["label"] == "SQL · English · Free"
+
+
+def test_free_catalog_source_strips_page_before_discovery():
+    assert (
+        normalize_udemy_search_source("https://www.udemy.com/courses/free/?p=3")
+        == UDEMY_DEFAULT_SEARCH_URL
+    )
 
 
 def test_discovery_readiness_requires_explicit_access_acknowledgement(provider):
@@ -167,7 +212,37 @@ def test_celery_task_builds_the_requested_course_limit_target(provider):
         source = UDEMY_DEFAULT_SEARCH_URL
         run_provider_discovery.run(provider.pk, source, 75)
 
-    build.assert_called_once_with(provider, source, 75)
+    build.assert_called_once_with(provider, source, 75, skip_existing=False)
+
+
+@pytest.mark.django_db
+def test_celery_manual_new_only_task_passes_skip_existing(provider):
+    fake_run = SimpleNamespace(
+        pk=93,
+        status=DiscoveryRun.Status.SUCCEEDED,
+        records_found=0,
+        records_new=0,
+        records_updated=0,
+        records_failed=0,
+    )
+    target = SimpleNamespace(connector=object(), source="topic-source")
+
+    with patch("discovery.tasks.build_discovery_target", return_value=target) as build, patch(
+        "discovery.tasks.execute_discovery", return_value=fake_run
+    ), patch("discovery.tasks.evaluate_provider_publication_candidates.delay"):
+        run_provider_discovery.run(
+            provider.pk,
+            "https://www.udemy.com/topic/python/free/",
+            25,
+            True,
+        )
+
+    build.assert_called_once_with(
+        provider,
+        "https://www.udemy.com/topic/python/free/",
+        25,
+        skip_existing=True,
+    )
 
 
 @pytest.mark.django_db

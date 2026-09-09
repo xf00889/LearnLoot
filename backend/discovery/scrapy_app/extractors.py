@@ -307,6 +307,35 @@ def extract_udemy_course_image(response) -> str:
     return ""
 
 
+def extract_udemy_course_language(response) -> str:
+    """Return the public primary course language when Udemy exposes it."""
+
+    selectors = (
+        "[data-purpose='lead-course-locale']::text",
+        "[data-purpose='lead-course-locale'] *::text",
+        "[data-purpose='course-locale']::text",
+        "[data-purpose='course-locale'] *::text",
+    )
+    for query in selectors:
+        value = _clean_text(response.css(query).getall())
+        if value:
+            return value
+
+    # Some public pages expose schema.org language metadata. Read only an
+    # explicit inLanguage property; do not infer the course language from the
+    # site UI locale or subtitle labels.
+    for script in response.css("script[type='application/ld+json']::text").getall():
+        match = re.search(
+            r'"inLanguage"\s*:\s*"([^"\\]+)"',
+            script,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return _clean_text([match.group(1)])
+
+    return ""
+
+
 def extract_udemy_free_records(response) -> list[dict]:
     """Extract public course-card metadata from a rendered Udemy free catalog page."""
 
