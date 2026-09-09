@@ -8,12 +8,13 @@ from courses.models import Course, CourseSource
 from discovery.providers.base import ProviderAccessError
 from discovery.providers.udemy_free import UdemyFreeConfig, UdemyFreeCourseProvider
 from discovery.scrapy_app.runner import ScrapyCrawlerError
+from discovery.udemy_catalog import UDEMY_DEFAULT_SEARCH_URL
 from discovery.services import execute_discovery
 from pricing.models import CoursePrice
 from providers.models import Provider
 
 
-SOURCE = "https://www.udemy.com/courses/free/"
+SOURCE = UDEMY_DEFAULT_SEARCH_URL
 
 
 class StubCrawler:
@@ -71,10 +72,10 @@ def test_udemy_provider_requires_explicit_access_acknowledgement():
         connector.validate_access()
 
 
-def test_udemy_provider_accepts_only_public_free_catalog_source():
+def test_udemy_provider_accepts_only_filtered_free_english_search_source():
     connector, _crawler = build_connector([])
 
-    with pytest.raises(ValueError, match="courses/free"):
+    with pytest.raises(ValueError, match="courses/search"):
         list(connector.discover("https://www.udemy.com/courses/development/"))
 
 

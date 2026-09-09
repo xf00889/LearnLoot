@@ -250,6 +250,12 @@ CELERY_RESULT_BACKEND = env.str("CELERY_RESULT_BACKEND")
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
+# Local convenience only. Production workers must be supervised separately.
+LEARNLOOT_ADMIN_AUTO_START_CELERY_WORKER = env.bool(
+    "LEARNLOOT_ADMIN_AUTO_START_CELERY_WORKER",
+    default=DEBUG,
+)
+
 LEARNLOOT_AUTOMATION_ENABLED = env.bool(
     "LEARNLOOT_AUTOMATION_ENABLED",
     default=False,
@@ -307,7 +313,10 @@ LEARNLOOT_UDEMY_DISCOVERY_ACCESS_APPROVED = env.bool(
 )
 LEARNLOOT_UDEMY_DISCOVERY_SOURCE_URL = env.str(
     "LEARNLOOT_UDEMY_DISCOVERY_SOURCE_URL",
-    default="https://www.udemy.com/courses/free/",
+    default=(
+        "https://www.udemy.com/courses/search/"
+        "?q=sql+course&src=sac&price=price-free&lang=en"
+    ),
 )
 LEARNLOOT_UDEMY_DISCOVERY_MAX_PAGES = env.int(
     "LEARNLOOT_UDEMY_DISCOVERY_MAX_PAGES",

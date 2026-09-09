@@ -24,13 +24,18 @@ from discovery.registry import (
     safe_source_for_display,
 )
 from discovery.tasks import run_provider_discovery
+from discovery.udemy_catalog import (
+    UDEMY_DEFAULT_SEARCH_URL,
+    discovery_filters_for_source,
+    normalize_udemy_search_source,
+)
 from providers.admin import ProviderAdmin
 from providers.models import Provider
 
 
 READY_SETTINGS = {
     "LEARNLOOT_UDEMY_DISCOVERY_ACCESS_APPROVED": True,
-    "LEARNLOOT_UDEMY_DISCOVERY_SOURCE_URL": "https://www.udemy.com/courses/free/",
+    "LEARNLOOT_UDEMY_DISCOVERY_SOURCE_URL": UDEMY_DEFAULT_SEARCH_URL,
     "LEARNLOOT_UDEMY_DISCOVERY_MAX_PAGES": 3,
     "LEARNLOOT_UDEMY_DISCOVERY_ITEM_LIMIT": 25,
     "LEARNLOOT_UDEMY_DISCOVERY_RENDER_WAIT_MS": 4500,
@@ -47,11 +52,41 @@ def test_registered_udemy_target_uses_runtime_settings(provider):
         target = build_discovery_target(provider)
 
     assert isinstance(target.connector, UdemyFreeCourseProvider)
-    assert target.source == "https://www.udemy.com/courses/free/"
+    assert target.source == UDEMY_DEFAULT_SEARCH_URL
     assert target.config.max_pages == 3
     assert target.config.item_limit == 25
     assert target.config.render_wait_ms == 4500
     assert target.connector.config.access_approved is True
+
+
+def test_registered_udemy_target_uses_an_admin_course_limit(provider):
+    source = "https://www.udemy.com/courses/search/?q=javascript&price=price-free&lang=en"
+    with override_settings(**READY_SETTINGS):
+        target = build_discovery_target(provider, source, 75)
+
+    assert target.source == UDEMY_DEFAULT_SEARCH_URL
+    assert target.config.item_limit == 75
+    assert target.connector.config.catalog_page_url == target.source
+
+
+def test_udemy_search_source_requires_the_free_filter():
+    with pytest.raises(ValueError, match="Price set to Free"):
+        normalize_udemy_search_source(
+            "https://www.udemy.com/courses/search/?q=python"
+        )
+
+
+def test_udemy_search_source_uses_the_fixed_sql_free_english_url():
+    source = normalize_udemy_search_source(
+        f"{UDEMY_DEFAULT_SEARCH_URL}&q=python&lang=en&cert_topic=true",
+    )
+
+    filters = discovery_filters_for_source(source)
+    assert source == UDEMY_DEFAULT_SEARCH_URL
+    assert filters["label"] == "SQL courses · English · Free"
+    assert filters["query"] == "sql course"
+    assert filters["language"] == "English"
+    assert filters["certification_only"] is False
 
 
 def test_discovery_readiness_requires_explicit_access_acknowledgement(provider):
@@ -112,6 +147,27 @@ def test_celery_task_invokes_existing_discovery_pipeline(provider):
         "records_updated": 1,
         "records_failed": 1,
     }
+
+
+@pytest.mark.django_db
+def test_celery_task_builds_the_requested_course_limit_target(provider):
+    fake_run = SimpleNamespace(
+        pk=92,
+        status=DiscoveryRun.Status.SUCCEEDED,
+        records_found=0,
+        records_new=0,
+        records_updated=0,
+        records_failed=0,
+    )
+    target = SimpleNamespace(connector=object(), source="category-source")
+
+    with patch("discovery.tasks.build_discovery_target", return_value=target) as build, patch(
+        "discovery.tasks.execute_discovery", return_value=fake_run
+    ), patch("discovery.tasks.evaluate_provider_publication_candidates.delay"):
+        source = UDEMY_DEFAULT_SEARCH_URL
+        run_provider_discovery.run(provider.pk, source, 75)
+
+    build.assert_called_once_with(provider, source, 75)
 
 
 @pytest.mark.django_db

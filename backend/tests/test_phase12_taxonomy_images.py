@@ -188,6 +188,34 @@ def test_affiliate_post_and_product_support_manual_category_language_and_content
 
 
 @pytest.mark.django_db
+def test_affiliate_post_creation_can_add_first_affiliate_link_atomically(staff_client):
+    response = staff_client.post(
+        "/api/admin/shop/posts/",
+        data=json.dumps({
+            "title": "Mechanical keyboard deal",
+            "affiliate_url": "https://shopee.ph/mechanical-keyboard",
+        }),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201
+    post = ShoppingPost.objects.get()
+    product = post.products.get()
+    assert product.position == 1
+    assert product.name == post.title
+    assert product.affiliate_url == "https://shopee.ph/mechanical-keyboard"
+    assert response.json()["product_count"] == 1
+
+    rejected = staff_client.post(
+        "/api/admin/shop/posts/",
+        data=json.dumps({"title": "Invalid link", "affiliate_url": "http://unsafe.example/item"}),
+        content_type="application/json",
+    )
+    assert rejected.status_code == 400
+    assert ShoppingPost.objects.count() == 1
+
+
+@pytest.mark.django_db
 def test_public_course_search_payload_carries_thumbnail_taxonomy_and_language(provider, settings):
     settings.LEARNLOOT_PUBLIC_BASE_URL = "https://learnloot.test"
     now = timezone.now()

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
@@ -7,6 +7,7 @@ from providers.models import Provider
 
 from .providers.base import CourseProvider, ProviderAccessError
 from .providers.udemy_free import UdemyFreeConfig, UdemyFreeCourseProvider
+from .udemy_catalog import normalize_udemy_search_source
 
 
 class UnsupportedDiscoveryProvider(LookupError):
@@ -47,8 +48,15 @@ def get_discovery_provider_config(provider_slug: str) -> DiscoveryProviderConfig
     )
 
 
-def build_discovery_target(provider: Provider) -> DiscoveryTarget:
+def build_discovery_target(
+    provider: Provider,
+    source_url: str = "",
+    item_limit: int | None = None,
+) -> DiscoveryTarget:
     config = get_discovery_provider_config(provider.slug)
+    if item_limit is not None:
+        config = replace(config, item_limit=item_limit)
+    source = normalize_udemy_search_source(source_url or config.source)
     connector = UdemyFreeCourseProvider(
         UdemyFreeConfig(
             access_approved=config.access_approved,
@@ -56,18 +64,22 @@ def build_discovery_target(provider: Provider) -> DiscoveryTarget:
             item_limit=config.item_limit,
             render_wait_ms=config.render_wait_ms,
             currency=config.currency,
-            catalog_page_url=config.source,
+            catalog_page_url=source,
         )
     )
-    return DiscoveryTarget(connector=connector, source=config.source, config=config)
+    return DiscoveryTarget(connector=connector, source=source, config=config)
 
 
-def get_discovery_readiness(provider: Provider) -> tuple[bool, str]:
+def get_discovery_readiness(
+    provider: Provider,
+    source_url: str = "",
+    item_limit: int | None = None,
+) -> tuple[bool, str]:
     if provider.status != Provider.Status.ACTIVE:
         return False, "Inactive"
 
     try:
-        target = build_discovery_target(provider)
+        target = build_discovery_target(provider, source_url, item_limit)
         target.connector.validate_access()
     except UnsupportedDiscoveryProvider:
         return False, "Unsupported"

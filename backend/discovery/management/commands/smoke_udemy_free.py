@@ -4,6 +4,7 @@ from discovery.normalizers import normalize_candidate
 from discovery.providers.base import ProviderAccessError
 from discovery.providers.udemy_free import UdemyFreeConfig, UdemyFreeCourseProvider
 from discovery.scrapy_app.runner import ScrapyCrawlerError
+from discovery.udemy_catalog import UDEMY_DEFAULT_SEARCH_URL
 from discovery.validators import validate_course
 
 
@@ -43,7 +44,7 @@ class Command(BaseCommand):
         if not 0 <= render_wait_ms <= 15_000:
             raise CommandError("--render-wait-ms must be between 0 and 15000")
 
-        source = "https://www.udemy.com/courses/free/"
+        source = UDEMY_DEFAULT_SEARCH_URL
         connector = UdemyFreeCourseProvider(
             UdemyFreeConfig(
                 access_approved=True,

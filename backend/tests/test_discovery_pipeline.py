@@ -5,6 +5,7 @@ import pytest
 from courses.models import Course, CourseSource
 from discovery.models import DiscoveryObservation, DiscoveryRun
 from discovery.providers import FakeCourseProvider
+from discovery.scrapy_app.runner import ScrapyCrawlerError
 from discovery.services import DiscoveryExecutionError, execute_discovery
 from pricing.models import CoursePrice
 from providers.models import Provider
@@ -94,6 +95,43 @@ def test_rediscovery_is_idempotent_for_course_source_and_price(provider):
 
 
 @pytest.mark.django_db
+def test_duplicate_records_are_processed_once_per_run(provider):
+    record = fake_record()
+    same_course_with_another_id = fake_record(external_id="other-id")
+    same_course_with_another_id["course"]["url"] = record["course"]["url"]
+
+    run = execute_discovery(
+        provider,
+        FakeCourseProvider([record, record, same_course_with_another_id]),
+        "source-a",
+    )
+
+    assert run.records_found == 1
+    assert run.records_new == 1
+    assert run.records_updated == 0
+    assert Course.objects.count() == 1
+    assert DiscoveryObservation.objects.filter(run=run).count() == 1
+
+
+@pytest.mark.django_db
+def test_changed_external_id_reuses_existing_canonical_course(provider):
+    original = fake_record()
+    execute_discovery(provider, FakeCourseProvider([original]), "source-a")
+    replacement = fake_record(external_id="replacement-id")
+    replacement["course"]["url"] = original["course"]["url"]
+
+    run = execute_discovery(
+        provider,
+        FakeCourseProvider([replacement]),
+        "source-a",
+    )
+
+    assert run.records_new == 0
+    assert Course.objects.count() == 1
+    assert Course.objects.get().external_id == "fake-101"
+
+
+@pytest.mark.django_db
 def test_metadata_change_updates_course_but_preserves_stable_slug(provider):
     execute_discovery(provider, FakeCourseProvider([fake_record()]), "source-a")
     course = Course.objects.get(provider=provider, external_id="fake-101")
@@ -177,6 +215,19 @@ def test_provider_failure_is_audited_without_deleting_existing_course(provider):
     assert run.status == DiscoveryRun.Status.FAILED
     assert run.records_found == 0
     assert Course.objects.filter(pk=existing.pk).exists()
+
+
+@pytest.mark.django_db
+def test_scrapy_access_block_is_visible_in_the_failed_run(provider):
+    connector = FakeCourseProvider(
+        discovery_error=ScrapyCrawlerError("Udemy disallowed this search URL in robots.txt")
+    )
+
+    with pytest.raises(DiscoveryExecutionError) as exc_info:
+        execute_discovery(provider, connector, "source-a")
+
+    run = DiscoveryRun.objects.get(pk=exc_info.value.run_id)
+    assert run.error_message == "Udemy disallowed this search URL in robots.txt"
 
 
 @pytest.mark.django_db

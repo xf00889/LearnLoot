@@ -12,6 +12,7 @@ from providers.models import Provider
 from .contracts import DiscoveryIdentity, NormalizedCourse
 from .models import DiscoveryObservation, DiscoveryRun
 from .providers.base import CourseProvider
+from .scrapy_app.runner import ScrapyCrawlerError
 from .validators import CourseValidationError, validate_course
 
 
@@ -122,6 +123,12 @@ def upsert_course(
             .filter(provider=provider, external_id=course.external_id)
             .first()
         )
+        if course_model is None:
+            course_model = (
+                Course.objects.select_for_update()
+                .filter(provider=provider, canonical_url=course.canonical_url)
+                .first()
+            )
 
         created = course_model is None
         materially_changed = False
@@ -243,6 +250,9 @@ def execute_discovery(
     records_new = 0
     records_updated = 0
     records_failed = 0
+    seen_external_ids: set[str] = set()
+    seen_canonical_urls: set[str] = set()
+    seen_invalid_identities: set[str] = set()
 
     try:
         if provider.status != Provider.Status.ACTIVE:
@@ -253,13 +263,37 @@ def execute_discovery(
         connector.validate_access()
 
         for raw_course in connector.discover(source):
-            records_found += 1
             identity = _safe_identity(connector, raw_course, source)
             observed_at = timezone.now()
 
             try:
                 normalized = connector.normalize(raw_course, source)
                 validate_course(normalized)
+            except (CourseValidationError, TypeError, ValueError, KeyError):
+                invalid_key = identity.external_id or identity.source_url
+                if invalid_key in seen_invalid_identities:
+                    continue
+                seen_invalid_identities.add(invalid_key)
+                records_found += 1
+                records_failed += 1
+                DiscoveryObservation.objects.create(
+                    run=run,
+                    external_id=identity.external_id,
+                    source_url=identity.source_url,
+                    observed_at=observed_at,
+                )
+                continue
+
+            if (
+                normalized.external_id in seen_external_ids
+                or normalized.canonical_url in seen_canonical_urls
+            ):
+                continue
+            seen_external_ids.add(normalized.external_id)
+            seen_canonical_urls.add(normalized.canonical_url)
+            records_found += 1
+
+            try:
                 result = upsert_course(provider, normalized, observed_at)
             except (CourseValidationError, TypeError, ValueError, KeyError):
                 records_failed += 1
@@ -285,7 +319,11 @@ def execute_discovery(
                 records_updated += 1
 
     except Exception as exc:
-        error_message = f"{type(exc).__name__} during provider discovery"
+        error_message = (
+            str(exc)
+            if isinstance(exc, ScrapyCrawlerError)
+            else f"{type(exc).__name__} during provider discovery"
+        )
         _finish_run(
             run,
             status=DiscoveryRun.Status.FAILED,

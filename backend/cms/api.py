@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
@@ -15,8 +17,17 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from courses.models import Course
-from discovery.models import DiscoveryRun
+from discovery.models import DiscoveryObservation, DiscoveryRun
+from discovery.registry import safe_source_for_display
+from discovery.tasks import queue_provider_discovery
+from discovery.udemy_catalog import (
+    UDEMY_DEFAULT_SEARCH_URL,
+    discovery_filters_for_source,
+    normalize_udemy_search_source,
+)
+from discovery.worker import ensure_local_discovery_worker
 from pricing.models import CoursePrice
+from providers.models import Provider
 from publishing.models import PublicationQueueItem, TelegramPost
 from shopping.models import ShoppingClickEvent, ShoppingPost, ShoppingProduct
 from tracking.models import ClickEvent
@@ -27,6 +38,7 @@ from .sanitizer import sanitize_rich_html
 MAX_PAGE_SIZE = 100
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".avif"}
 ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/avif"}
+logger = logging.getLogger(__name__)
 
 
 def _staff_required(view):
@@ -251,6 +263,133 @@ def dashboard(request: HttpRequest) -> JsonResponse:
             "discovery": {
                 "latest_status": latest_discovery.status if latest_discovery else None,
                 "latest_started_at": latest_discovery.started_at.isoformat() if latest_discovery else None,
+            },
+        }
+    )
+
+
+def _discovery_run_payload(run: DiscoveryRun) -> dict:
+    return {
+        "id": run.pk,
+        "provider": {
+            "id": run.provider_id,
+            "name": run.provider.name,
+            "slug": run.provider.slug,
+        },
+        "search_filters": discovery_filters_for_source(run.source),
+        "source": safe_source_for_display(run.source),
+        "status": run.status,
+        "started_at": run.started_at.isoformat(),
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "records_found": run.records_found,
+        "records_new": run.records_new,
+        "records_updated": run.records_updated,
+        "records_failed": run.records_failed,
+        "error_message": run.error_message,
+    }
+
+
+@require_GET
+@_staff_required
+def discovery_run_list(request: HttpRequest) -> JsonResponse:
+    runs = list(
+        DiscoveryRun.objects.select_related("provider")
+        .order_by("-started_at", "-id")[:MAX_PAGE_SIZE]
+    )
+    return JsonResponse(
+        {
+            "count": len(runs),
+            "results": [_discovery_run_payload(run) for run in runs],
+            "filters": {
+                "default_course_count": settings.LEARNLOOT_UDEMY_DISCOVERY_ITEM_LIMIT or 100,
+            },
+        }
+    )
+
+
+@require_POST
+@_staff_required
+def discovery_run_create(request: HttpRequest) -> JsonResponse:
+    try:
+        payload = _json_body(request) if request.content_type == "application/json" else {}
+        course_count = payload.get("course_count")
+        if isinstance(course_count, bool) or not isinstance(course_count, int):
+            raise ValueError("Number of courses must be a whole number.")
+        if not 1 <= course_count <= 5000:
+            raise ValueError("Number of courses must be between 1 and 5000.")
+        source_url = normalize_udemy_search_source(UDEMY_DEFAULT_SEARCH_URL)
+        search_filters = discovery_filters_for_source(source_url)
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
+
+    provider = Provider.objects.filter(slug="udemy").first()
+    if provider is None:
+        return JsonResponse({"detail": "The Udemy provider is not configured."}, status=409)
+
+    try:
+        worker_status = ensure_local_discovery_worker()
+        status, detail = queue_provider_discovery(provider, source_url, course_count)
+    except Exception:
+        logger.exception("Unable to start or reach the Celery discovery worker")
+        return JsonResponse(
+            {"detail": "Unable to start or reach Celery. Check Redis and the worker configuration."},
+            status=503,
+        )
+    if status != "queued":
+        return JsonResponse({"detail": detail}, status=409)
+
+    return JsonResponse(
+        {
+            "queued": True,
+            "task_id": detail,
+            "worker_started": worker_status == "started",
+            "course_count": course_count,
+            "source_url": source_url,
+            "search_filters": search_filters,
+            "provider": {
+                "id": provider.pk,
+                "name": provider.name,
+                "slug": provider.slug,
+            },
+        },
+        status=202,
+    )
+
+
+@require_GET
+@_staff_required
+def discovery_run_detail(request: HttpRequest, run_id: int) -> JsonResponse:
+    try:
+        run = DiscoveryRun.objects.select_related("provider").get(pk=run_id)
+    except DiscoveryRun.DoesNotExist:
+        return JsonResponse({"detail": "Discovery run not found."}, status=404)
+
+    observation_queryset = DiscoveryObservation.objects.filter(run=run)
+    total_observations = observation_queryset.count()
+    observations = list(
+        observation_queryset.select_related("course")
+        .order_by("observed_at", "id")[:MAX_PAGE_SIZE]
+    )
+    return JsonResponse(
+        {
+            **_discovery_run_payload(run),
+            "observations": {
+                "count": total_observations,
+                "results": [
+                    {
+                        "id": observation.pk,
+                        "external_id": observation.external_id,
+                        "source_url": safe_source_for_display(observation.source_url),
+                        "observed_at": observation.observed_at.isoformat(),
+                        "course": {
+                            "id": observation.course_id,
+                            "title": observation.course.public_title,
+                        }
+                        if observation.course
+                        else None,
+                    }
+                    for observation in observations
+                ],
             },
         }
     )
@@ -486,13 +625,25 @@ def shopping_post_list(request: HttpRequest) -> JsonResponse:
     post.excerpt = str(payload.get("short_description", payload.get("excerpt", ""))).strip()
     post.body = sanitize_rich_html(str(payload.get("content", payload.get("body", "")) or ""))
     post.language = str(payload.get("language", "")).strip() or None
+    affiliate_url = str(payload.get("affiliate_url", "")).strip()
     try:
         post.category = _category_from_payload(payload.get("category_id"), scope=ContentCategory.Scope.AFFILIATE)
     except ValueError as exc:
         return JsonResponse({"detail": str(exc)}, status=400)
     try:
-        post.full_clean()
-        post.save()
+        with transaction.atomic():
+            post.full_clean()
+            post.save()
+            if affiliate_url:
+                product = ShoppingProduct(
+                    post=post,
+                    position=1,
+                    name=post.title,
+                    slug=slugify(post.title)[:220],
+                    affiliate_url=affiliate_url,
+                )
+                product.full_clean(exclude=("image",))
+                product.save()
     except Exception as exc:
         from django.core.exceptions import ValidationError
         if isinstance(exc, ValidationError):

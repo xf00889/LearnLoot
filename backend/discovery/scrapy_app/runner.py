@@ -89,6 +89,15 @@ class ScrapyUdemySource:
                     "Udemy Scrapy crawl failed; inspect Scrapy logs for the provider response"
                 )
 
+            if "robotstxt/forbidden" in result.stderr:
+                raise ScrapyCrawlerError(
+                    "Udemy disallowed this search URL in robots.txt; the scraper did not bypass that restriction."
+                )
+            if "udemy_access_challenge" in result.stderr:
+                raise ScrapyCrawlerError(
+                    "Udemy presented an access challenge; the scraper did not bypass it. Try again later or use an approved catalog feed."
+                )
+
             if not output_path.exists():
                 raise ScrapyCrawlerError("Udemy Scrapy crawl produced no feed output")
 

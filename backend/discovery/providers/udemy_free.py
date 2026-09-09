@@ -5,14 +5,12 @@ from urllib.parse import urljoin, urlparse
 
 from discovery.contracts import CourseCandidate, DiscoveryIdentity, NormalizedCourse
 from discovery.scrapy_app.runner import ScrapyUdemySource
+from discovery.udemy_catalog import UDEMY_DEFAULT_SEARCH_URL, validate_udemy_catalog_source
 
 from .base import CourseProvider, ProviderAccessError, RawCourse
 
 
 _UDEMY_HOST = "www.udemy.com"
-_UDEMY_FREE_PAGE_PATH = "/courses/free/"
-
-
 @dataclass(frozen=True, slots=True)
 class UdemyFreeConfig:
     access_approved: bool = False
@@ -20,7 +18,7 @@ class UdemyFreeConfig:
     item_limit: int = 0
     render_wait_ms: int = 3500
     currency: str = "USD"
-    catalog_page_url: str = "https://www.udemy.com/courses/free/"
+    catalog_page_url: str = UDEMY_DEFAULT_SEARCH_URL
 
 
 class UdemyFreeCourseProvider(CourseProvider):
@@ -119,17 +117,7 @@ class UdemyFreeCourseProvider(CourseProvider):
 
     @staticmethod
     def _validate_catalog_source(value: str) -> None:
-        parsed = urlparse(value)
-        if (
-            parsed.scheme != "https"
-            or parsed.hostname != _UDEMY_HOST
-            or parsed.path != _UDEMY_FREE_PAGE_PATH
-            or parsed.username is not None
-            or parsed.password is not None
-        ):
-            raise ValueError(
-                "Udemy connector source must be https://www.udemy.com/courses/free/"
-            )
+        validate_udemy_catalog_source(value)
 
     @staticmethod
     def _absolute_course_url(value: Any) -> str | None:

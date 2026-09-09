@@ -8,9 +8,16 @@ Do not point this connector at ordinary provider website pages. It expects provi
 
 ## Udemy free-course connector
 
-LearnLoot uses Scrapy + scrapy-playwright for the public Udemy free-course catalog at:
+LearnLoot uses this fixed Udemy SQL, Free, and English course search:
 
-`https://www.udemy.com/courses/free/`
+`https://www.udemy.com/courses/search/?q=sql+course&src=sac&price=price-free&lang=en`
+
+The admin supplies only the requested course count. The source normalizer routes
+every discovery run through this URL. Repeated listings are skipped before
+persistence, and the database pipeline updates an existing course instead of
+creating a duplicate. If Udemy's current robots directives disallow that URL or
+an access challenge is returned, the run fails visibly; the crawler does not
+bypass either restriction.
 
 The crawler is intentionally configured for compliance and low load:
 
@@ -31,7 +38,7 @@ The crawler is intentionally configured for compliance and low load:
 - no paid lesson/media scraping
 - no learner/private-data collection
 
-Playwright is used only to render the same public free-course page because the initial HTML shell does not contain the course cards.
+Playwright is used only to render the public SQL course-search page because the initial HTML shell does not contain the course cards.
 
 The spider accepts genuine free-catalog records only. When the rendered public card exposes a numeric course id it is used. When it does not, LearnLoot temporarily uses a namespaced `slug:<course-slug>` identity until a permitted source exposes the canonical numeric provider id.
 

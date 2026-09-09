@@ -1,9 +1,11 @@
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import scrapy
+from scrapy.exceptions import CloseSpider
 from scrapy_playwright.page import PageMethod
 
 from discovery.scrapy_app.extractors import extract_udemy_course_image, extract_udemy_free_records
+from discovery.udemy_catalog import UDEMY_DEFAULT_SEARCH_URL, validate_udemy_catalog_source
 
 
 class UdemyFreeSpider(scrapy.Spider):
@@ -12,7 +14,7 @@ class UdemyFreeSpider(scrapy.Spider):
 
     def __init__(
         self,
-        source_url="https://www.udemy.com/courses/free/",
+        source_url=UDEMY_DEFAULT_SEARCH_URL,
         max_pages="1",
         item_limit="0",
         render_wait_ms="3500",
@@ -30,6 +32,7 @@ class UdemyFreeSpider(scrapy.Spider):
             15_000,
         )
         self._emitted = 0
+        self._seen_course_keys: set[str] = set()
         self._validate_source_url(source_url)
 
     async def start(self):
@@ -39,11 +42,19 @@ class UdemyFreeSpider(scrapy.Spider):
         page_number = self._response_page_number(response)
         records = extract_udemy_free_records(response)
 
+        if not records and self._is_access_challenge(response):
+            raise CloseSpider("udemy_access_challenge")
+
         for record in records:
             record["listing_page_url"] = response.url
             record["source_url"] = self.source_url
 
         for record in records:
+            course_key = str(record.get("url") or record.get("id") or "").strip()
+            if course_key and course_key in self._seen_course_keys:
+                continue
+            if course_key:
+                self._seen_course_keys.add(course_key)
             if self.item_limit and self._emitted >= self.item_limit:
                 return
             self._emitted += 1
@@ -107,7 +118,7 @@ class UdemyFreeSpider(scrapy.Spider):
             (
                 "https",
                 "www.udemy.com",
-                "/courses/free/",
+                parsed.path,
                 urlencode(query),
                 "",
             )
@@ -135,17 +146,14 @@ class UdemyFreeSpider(scrapy.Spider):
 
     @staticmethod
     def _validate_source_url(value: str) -> None:
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme != "https"
-            or parsed.hostname != "www.udemy.com"
-            or parsed.path != "/courses/free/"
-            or parsed.username is not None
-            or parsed.password is not None
-        ):
-            raise ValueError(
-                "Udemy Scrapy source must be https://www.udemy.com/courses/free/"
-            )
+        validate_udemy_catalog_source(value)
+
+    @staticmethod
+    def _is_access_challenge(response) -> bool:
+        title = " ".join(response.css("title::text").getall()).strip().lower()
+        return title == "just a moment..." or bool(
+            response.css("#challenge-running, .cf-challenge, script[src*='challenge-platform']")
+        )
 
     @staticmethod
     def _bounded_int(value, name: str, minimum: int, maximum: int) -> int:

@@ -17,7 +17,11 @@ from .services import execute_discovery
     acks_late=True,
     reject_on_worker_lost=True,
 )
-def run_provider_discovery(provider_id: int) -> dict[str, int | str]:
+def run_provider_discovery(
+    provider_id: int,
+    source_url: str = "",
+    item_limit: int | None = None,
+) -> dict[str, int | str]:
     try:
         provider = Provider.objects.get(pk=provider_id)
     except Provider.DoesNotExist as exc:
@@ -34,7 +38,7 @@ def run_provider_discovery(provider_id: int) -> dict[str, int | str]:
             "records_failed": 0,
         }
 
-    target = build_discovery_target(provider)
+    target = build_discovery_target(provider, source_url, item_limit)
     run = execute_discovery(provider, target.connector, target.source)
 
     if run.status == DiscoveryRun.Status.SUCCEEDED:
@@ -50,6 +54,40 @@ def run_provider_discovery(provider_id: int) -> dict[str, int | str]:
         "records_failed": run.records_failed,
     }
 
+
+def queue_provider_discovery(
+    provider: Provider,
+    source_url: str = "",
+    item_limit: int | None = None,
+) -> tuple[str, str]:
+    """Queue one ready provider unless a recent discovery is still running."""
+
+    cutoff = timezone.now() - timedelta(
+        minutes=settings.LEARNLOOT_DISCOVERY_RUNNING_STALE_MINUTES
+    )
+    if DiscoveryRun.objects.filter(
+        provider=provider,
+        status=DiscoveryRun.Status.RUNNING,
+        started_at__gte=cutoff,
+    ).exists():
+        return "already_running", "A discovery run is already in progress."
+
+    ready, detail = (
+        get_discovery_readiness(provider, source_url, item_limit)
+        if source_url or item_limit is not None
+        else get_discovery_readiness(provider)
+    )
+    if not ready:
+        return "not_ready", detail
+
+    task = (
+        run_provider_discovery.delay(provider.pk, source_url, item_limit)
+        if source_url or item_limit is not None
+        else run_provider_discovery.delay(provider.pk)
+    )
+    return "queued", str(getattr(task, "id", "") or "")
+
+
 @shared_task(
     name="discovery.schedule_active_provider_discovery",
     acks_late=True,
@@ -58,9 +96,6 @@ def run_provider_discovery(provider_id: int) -> dict[str, int | str]:
 def schedule_active_provider_discovery() -> dict[str, int]:
     """Queue ready active providers without overlapping a recent running job."""
 
-    cutoff = timezone.now() - timedelta(
-        minutes=settings.LEARNLOOT_DISCOVERY_RUNNING_STALE_MINUTES
-    )
     queued = 0
     skipped_running = 0
     skipped_not_ready = 0
@@ -71,20 +106,13 @@ def schedule_active_provider_discovery() -> dict[str, int]:
     ).order_by("pk")
 
     for provider in providers:
-        if DiscoveryRun.objects.filter(
-            provider=provider,
-            status=DiscoveryRun.Status.RUNNING,
-            started_at__gte=cutoff,
-        ).exists():
+        status, _detail = queue_provider_discovery(provider)
+        if status == "already_running":
             skipped_running += 1
             continue
-
-        ready, _detail = get_discovery_readiness(provider)
-        if not ready:
+        if status == "not_ready":
             skipped_not_ready += 1
             continue
-
-        run_provider_discovery.delay(provider.pk)
         queued += 1
 
     return {

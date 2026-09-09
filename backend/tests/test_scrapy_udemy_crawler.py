@@ -2,12 +2,15 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+from scrapy.exceptions import CloseSpider
 from scrapy.http import HtmlResponse, Request
 
 from discovery.scrapy_app import settings
 from discovery.scrapy_app.extractors import extract_udemy_course_image, extract_udemy_free_records
-from discovery.scrapy_app.runner import ScrapyUdemySource
+from discovery.scrapy_app.runner import ScrapyCrawlerError, ScrapyUdemySource
 from discovery.scrapy_app.spiders.udemy_free import UdemyFreeSpider
+from discovery.udemy_catalog import UDEMY_DEFAULT_SEARCH_URL
 
 
 RENDERED_FIXTURE = """
@@ -256,10 +259,21 @@ def test_spider_builds_bounded_playwright_request():
 
     request = spider._page_request(1)
 
-    assert request.url == "https://www.udemy.com/courses/free/?p=1"
+    assert request.url == f"{UDEMY_DEFAULT_SEARCH_URL}&p=1"
     assert request.meta["playwright"] is True
     assert request.meta["learnloot_page_number"] == 1
     assert len(request.meta["playwright_page_methods"]) == 1
+
+
+def test_spider_preserves_search_filters_while_paginating():
+    source = "https://www.udemy.com/courses/search/?q=javascript&price=price-free&lang=en"
+    spider = UdemyFreeSpider(
+        source_url=source,
+        max_pages="2",
+        render_wait_ms="0",
+    )
+
+    assert spider._page_request(2).url == f"{source}&p=2"
 
 
 def test_spider_paginates_only_after_finding_course_cards():
@@ -274,8 +288,44 @@ def test_spider_paginates_only_after_finding_course_cards():
     assert records[0]["title"] == "Python for Beginners"
     assert {request.url for request in requests} == {
         "https://www.udemy.com/course/javascript-basics/",
-        "https://www.udemy.com/courses/free/?p=2",
+        f"{UDEMY_DEFAULT_SEARCH_URL}&p=2",
     }
+
+
+def test_spider_stops_when_udemy_presents_an_access_challenge():
+    response = HtmlResponse(
+        url=f"{UDEMY_DEFAULT_SEARCH_URL}&p=1",
+        request=Request(url=f"{UDEMY_DEFAULT_SEARCH_URL}&p=1"),
+        body=b"<html><head><title>Just a moment...</title></head></html>",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(CloseSpider) as exc:
+        list(UdemyFreeSpider(render_wait_ms="0").parse(response))
+    assert exc.value.reason == "udemy_access_challenge"
+
+
+def test_spider_skips_courses_repeated_on_later_pages():
+    spider = UdemyFreeSpider(max_pages="2", render_wait_ms="0")
+
+    first_page = list(spider.parse(rendered_response()))
+    second_page = list(
+        spider.parse(rendered_response("https://www.udemy.com/courses/free/?p=2"))
+    )
+
+    first_detail_urls = {
+        item.url
+        for item in first_page
+        if isinstance(item, Request) and "/course/" in item.url
+    }
+    second_detail_urls = {
+        item.url
+        for item in second_page
+        if isinstance(item, Request) and "/course/" in item.url
+    }
+    assert first_detail_urls == {"https://www.udemy.com/course/javascript-basics/"}
+    assert second_detail_urls == set()
+    assert not any(isinstance(item, dict) for item in second_page)
 
 
 def test_thumbnail_prefers_largest_lazy_responsive_candidate():
@@ -368,3 +418,27 @@ def test_scrapy_runner_uses_isolated_subprocess_and_reads_jsonl(tmp_path):
         captured["kwargs"]["env"]["SCRAPY_SETTINGS_MODULE"]
         == "discovery.scrapy_app.settings"
     )
+
+
+def test_scrapy_runner_reports_a_robots_block_instead_of_zero_results(tmp_path):
+    def blocked_run(command, **kwargs):
+        output_path = Path(command[command.index("-O") + 1])
+        output_path.write_text("", encoding="utf-8")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            "",
+            "robotstxt/forbidden: 1",
+        )
+
+    runner = ScrapyUdemySource(backend_dir=tmp_path, run=blocked_run)
+
+    with pytest.raises(ScrapyCrawlerError, match="robots.txt"):
+        list(
+            runner.crawl(
+                UDEMY_DEFAULT_SEARCH_URL,
+                max_pages=1,
+                item_limit=5,
+                render_wait_ms=0,
+            )
+        )
