@@ -1,5 +1,6 @@
 "use client";
 
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import { Alert, Box, Button, Divider, Grid, MenuItem, Paper, Stack, Tab, Tabs, TextField, Typography } from "@mui/material";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -63,7 +64,10 @@ export default function AdminCourseEditPage() {
     <Stack spacing={2}>
       <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" gap={2}>
         <div><Typography variant="h4" fontWeight={900}>{course.title}</Typography><Typography color="text.secondary">{course.provider} · source ID {course.external_id}</Typography></div>
-        <Button variant="contained" onClick={save} disabled={saving}>{saving ? "Saving..." : "Save changes"}</Button>
+        <Stack direction="row" gap={1} flexWrap="wrap">
+          <Button component="a" href={course.source.canonical_url} target="_blank" rel="noopener noreferrer" variant="outlined" startIcon={<OpenInNewOutlined />}>View on Udemy</Button>
+          <Button variant="contained" onClick={save} disabled={saving}>{saving ? "Saving..." : "Save changes"}</Button>
+        </Stack>
       </Stack>
       {message ? <Alert severity="success">{message}</Alert> : null}
       {error ? <Alert severity="error">{error}</Alert> : null}

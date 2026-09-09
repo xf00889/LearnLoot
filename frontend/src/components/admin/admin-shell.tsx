@@ -5,6 +5,7 @@ import FolderOutlined from "@mui/icons-material/FolderOutlined";
 import LogoutOutlined from "@mui/icons-material/LogoutOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import MenuIcon from "@mui/icons-material/Menu";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import PhotoLibraryOutlined from "@mui/icons-material/PhotoLibraryOutlined";
 import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
 import {
@@ -26,6 +27,7 @@ const sectionGroups = [
     hrefs: [
       { href: "/admin/courses", label: "All courses" },
       { href: "/admin/courses/categories", label: "Categories" },
+      { href: "/admin/discovery", label: "Discovery runs" },
     ],
   },
   {
@@ -120,7 +122,19 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <Toolbar>
           <IconButton edge="start" onClick={() => setMobileOpen(true)} sx={{ display: { md: "none" }, mr: 1 }}><MenuIcon /></IconButton>
           <Typography sx={{ flexGrow: 1, fontWeight: 800 }}>Content management</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mr: 2 }}>{user.username}</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mr: 2, display: { xs: "none", sm: "block" } }}>{user.username}</Typography>
+          <Button
+            component="a"
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Preview homepage in a new tab"
+            startIcon={<OpenInNewOutlined />}
+            color="inherit"
+            sx={{ mr: 1, minWidth: { xs: 40, sm: "auto" }, "& .MuiButton-startIcon": { mr: { xs: 0, sm: 1 } } }}
+          >
+            <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>Preview homepage</Box>
+          </Button>
           <Button startIcon={<LogoutOutlined />} color="inherit" onClick={async () => { await adminLogout(); router.replace("/admin/login"); }}>Sign out</Button>
         </Toolbar>
       </AppBar>

@@ -35,3 +35,6 @@ backups/
 celerybeat-schedule*
 *.dump
 *.backup
+
+# Superdesign temporary conversion files
+.superdesign/tmp/

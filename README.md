@@ -42,6 +42,12 @@ celery -A config --workdir backend worker --loglevel=INFO --pool=solo
 On platforms where Celery's normal worker pool is supported, omit
 `--pool=solo` unless your deployment requires it.
 
+In local `DEBUG` mode, the custom admin discovery action can start this same
+worker automatically when none responds. The command and arguments are fixed
+in code and no HTTP input is executed. Set
+`LEARNLOOT_ADMIN_AUTO_START_CELERY_WORKER=false` to require manual startup.
+Production continues to require a separately supervised worker.
+
 ## Admin discovery operations
 
 1. Create or verify the `Udemy` provider with slug `udemy`.
@@ -50,6 +56,12 @@ On platforms where Celery's normal worker pool is supported, omit
 4. Select the provider and choose **Queue discovery for selected providers**.
 5. Inspect Discovery Runs, observations, courses, sources, and price history in
    Django admin.
+
+The custom admin accepts the number of courses to collect and uses the fixed
+Udemy SQL, Free, and English search URL. Duplicate listings are skipped during
+the crawl and existing courses are updated instead of inserted again. A robots
+denial or access challenge is reported as a failed run rather than a successful
+run with zero records.
 
 Discovery runs and observation/price/source history are treated as audit data
 and are read-only in the admin. Course visibility is controlled with Activate,

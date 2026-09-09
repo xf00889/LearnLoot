@@ -14,6 +14,7 @@ export default function AdminShopNewPage() {
   const [shortDescription, setShortDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [language, setLanguage] = useState("");
+  const [affiliateUrl, setAffiliateUrl] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -33,6 +34,7 @@ export default function AdminShopNewPage() {
         short_description: shortDescription,
         category_id: categoryId ? Number(categoryId) : null,
         language,
+        affiliate_url: affiliateUrl,
       });
       router.replace(`/admin/shop/${post.id}`);
     } catch (e) {
@@ -42,7 +44,7 @@ export default function AdminShopNewPage() {
 
   return (
     <Stack spacing={2}>
-      <div><Typography variant="h4" fontWeight={900}>New affiliate content</Typography><Typography color="text.secondary">Create the draft, choose your manual category, then add rich content and Shopee products.</Typography></div>
+      <div><Typography variant="h4" fontWeight={900}>New affiliate content</Typography><Typography color="text.secondary">Create the draft with its first affiliate link, then add rich content and more products.</Typography></div>
       {error ? <Alert severity="error">{error}</Alert> : null}
       <Paper component="form" onSubmit={submit} variant="outlined" sx={{ p: 3, maxWidth: 760 }}>
         <Stack spacing={2}>
@@ -52,7 +54,8 @@ export default function AdminShopNewPage() {
           <TextField multiline minRows={2} label="Short description" inputProps={{ maxLength: 500 }} value={shortDescription} onChange={(e) => setShortDescription(e.target.value)} helperText={`${shortDescription.length}/500`} />
           <TextField select label="Category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}><MenuItem value=""><em>No category</em></MenuItem>{categories.map((category) => <MenuItem key={category.id} value={String(category.id)}>{category.name}</MenuItem>)}</TextField>
           <TextField label="Language (optional)" value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="English" />
-          <Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Create draft</Button>
+          <TextField required type="url" label="Shopee affiliate link" value={affiliateUrl} onChange={(e) => setAffiliateUrl(e.target.value)} placeholder="https://shopee.ph/..." helperText="Creates the first affiliate item using the content title." />
+          <Button type="submit" variant="contained" sx={{ alignSelf: "flex-start" }}>Create draft and add link</Button>
         </Stack>
       </Paper>
     </Stack>

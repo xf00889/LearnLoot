@@ -24,6 +24,33 @@ export type DashboardPayload = {
   discovery: { latest_status: string | null; latest_started_at: string | null };
 };
 
+export type AdminDiscoveryProvider = { id: number; name: string; slug: string };
+export type AdminDiscoverySearchFilters = { label: string; query: string; topic: string; language: string; price: string; certification_only: boolean };
+export type AdminDiscoveryRun = {
+  id: number;
+  provider: AdminDiscoveryProvider;
+  search_filters: AdminDiscoverySearchFilters;
+  source: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  records_found: number;
+  records_new: number;
+  records_updated: number;
+  records_failed: number;
+  error_message: string;
+};
+export type AdminDiscoveryObservation = {
+  id: number;
+  external_id: string;
+  source_url: string;
+  observed_at: string;
+  course: { id: number; title: string } | null;
+};
+export type AdminDiscoveryRunDetail = AdminDiscoveryRun & {
+  observations: { count: number; results: AdminDiscoveryObservation[] };
+};
+
 export type AdminCourseSummary = {
   id: number;
   title: string;
@@ -147,6 +174,9 @@ export async function ensureAdminCsrf(): Promise<AdminSession> { return request<
 export async function adminLogin(username: string, password: string): Promise<AdminSession> { await ensureAdminCsrf(); return request<AdminSession>("/auth/login/", { method: "POST", body: JSON.stringify({ username, password }) }); }
 export async function adminLogout(): Promise<void> { await request("/auth/logout/", { method: "POST", body: "{}" }); }
 export async function getDashboard(): Promise<DashboardPayload> { return request("/dashboard/"); }
+export async function getAdminDiscoveryRuns(): Promise<{ count: number; results: AdminDiscoveryRun[]; filters: { default_course_count: number } }> { return request("/discovery/runs/"); }
+export async function getAdminDiscoveryRun(id: string | number): Promise<AdminDiscoveryRunDetail> { return request(`/discovery/runs/${id}/`); }
+export async function queueAdminDiscovery(courseCount: number): Promise<{ queued: boolean; task_id: string; worker_started: boolean; course_count: number; provider: AdminDiscoveryProvider; source_url: string; search_filters: AdminDiscoverySearchFilters }> { return request("/discovery/runs/queue/", { method: "POST", body: JSON.stringify({ course_count: courseCount }) }); }
 
 export async function getAdminCategories(scope: AdminCategoryScope): Promise<{ count: number; results: AdminCategory[] }> {
   return request(`/categories/?scope=${encodeURIComponent(scope)}`);
