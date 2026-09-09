@@ -5,11 +5,13 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
-from .views import health
+from .views import health, live, ready
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/health/", health, name="health"),
+    path("api/health/live/", live, name="health-live"),
+    path("api/health/ready/", ready, name="health-ready"),
     path("api/public/courses/", include("courses.urls")),
     path("api/public/shop/", include("shopping.urls")),
     path("go/shop/", include("shopping.outbound_urls")),

@@ -32,6 +32,13 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 
+LEARNLOOT_ENVIRONMENT = env.str(
+    "LEARNLOOT_ENVIRONMENT",
+    default="development",
+).strip().lower()
+LEARNLOOT_IS_PRODUCTION = LEARNLOOT_ENVIRONMENT == "production"
+LEARNLOOT_LOG_LEVEL = env.str("LEARNLOOT_LOG_LEVEL", default="INFO").strip().upper()
+
 ALLOWED_HOSTS = [
     host.strip()
     for host in env.str("DJANGO_ALLOWED_HOSTS").split(",")
@@ -60,6 +67,7 @@ INSTALLED_APPS = [
     "publishing",
     "tracking",
     "shopping",
+    "operations",
 ]
 
 MIDDLEWARE = [
@@ -99,6 +107,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     "default": env.db("DATABASE_URL"),
 }
+DATABASES["default"]["CONN_MAX_AGE"] = env.int(
+    "DJANGO_DB_CONN_MAX_AGE",
+    default=60 if LEARNLOOT_IS_PRODUCTION else 0,
+)
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = LEARNLOOT_IS_PRODUCTION
 
 
 # Password validation
@@ -135,9 +148,21 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
-STATIC_URL = "static/"
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+STATIC_URL = "/static/"
+STATIC_ROOT = Path(
+    env.str(
+        "LEARNLOOT_STATIC_ROOT",
+        default=str(BASE_DIR / "staticfiles"),
+    )
+)
+MEDIA_URL = env.str("LEARNLOOT_MEDIA_URL", default="/media/").strip() or "/media/"
+_media_root = env.str("LEARNLOOT_MEDIA_ROOT", default="").strip()
+LEARNLOOT_MEDIA_ROOT_CONFIGURED = bool(_media_root)
+MEDIA_ROOT = Path(_media_root) if _media_root else BASE_DIR / "media"
+LEARNLOOT_MEDIA_PERSISTENCE_CONFIRMED = env.bool(
+    "LEARNLOOT_MEDIA_PERSISTENCE_CONFIRMED",
+    default=False,
+)
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -163,12 +188,109 @@ CORS_ALLOWED_ORIGINS = [
     for origin in env.str("CORS_ALLOWED_ORIGINS").split(",")
     if origin.strip()
 ]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in env.str("DJANGO_CSRF_TRUSTED_ORIGINS", default="").split(",")
+    if origin.strip()
+]
+
+SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=False)
+SESSION_COOKIE_SECURE = env.bool(
+    "DJANGO_SESSION_COOKIE_SECURE",
+    default=LEARNLOOT_IS_PRODUCTION,
+)
+CSRF_COOKIE_SECURE = env.bool(
+    "DJANGO_CSRF_COOKIE_SECURE",
+    default=LEARNLOOT_IS_PRODUCTION,
+)
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+SECURE_HSTS_SECONDS = env.int("DJANGO_SECURE_HSTS_SECONDS", default=0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool(
+    "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS",
+    default=False,
+)
+SECURE_HSTS_PRELOAD = env.bool("DJANGO_SECURE_HSTS_PRELOAD", default=False)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+X_FRAME_OPTIONS = "DENY"
+
+if env.bool("DJANGO_TRUST_X_FORWARDED_PROTO", default=False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+_cache_url = env.str("LEARNLOOT_CACHE_URL", default="").strip()
+if _cache_url:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": _cache_url,
+            "KEY_PREFIX": "learnloot",
+            "TIMEOUT": 300,
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "learnloot-development",
+            "KEY_PREFIX": "learnloot",
+            "TIMEOUT": 300,
+        }
+    }
 
 CELERY_BROKER_URL = env.str("CELERY_BROKER_URL")
 CELERY_RESULT_BACKEND = env.str("CELERY_RESULT_BACKEND")
 
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
+
+LEARNLOOT_AUTOMATION_ENABLED = env.bool(
+    "LEARNLOOT_AUTOMATION_ENABLED",
+    default=False,
+)
+LEARNLOOT_DISCOVERY_INTERVAL_MINUTES = max(
+    env.int("LEARNLOOT_DISCOVERY_INTERVAL_MINUTES", default=60),
+    1,
+)
+LEARNLOOT_DISCOVERY_RUNNING_STALE_MINUTES = max(
+    env.int("LEARNLOOT_DISCOVERY_RUNNING_STALE_MINUTES", default=90),
+    1,
+)
+LEARNLOOT_TELEGRAM_MAINTENANCE_INTERVAL_MINUTES = max(
+    env.int("LEARNLOOT_TELEGRAM_MAINTENANCE_INTERVAL_MINUTES", default=5),
+    1,
+)
+
+def build_celery_beat_schedule(
+    *,
+    enabled: bool,
+    discovery_interval_minutes: int,
+    telegram_interval_minutes: int,
+) -> dict:
+    if not enabled:
+        return {}
+
+    return {
+        "learnloot-discovery-scheduler": {
+            "task": "discovery.schedule_active_provider_discovery",
+            "schedule": discovery_interval_minutes * 60.0,
+        },
+        "learnloot-telegram-stale-reconciliation": {
+            "task": "publishing.reconcile_stale_telegram_deliveries",
+            "schedule": telegram_interval_minutes * 60.0,
+        },
+        "learnloot-telegram-queue-dispatch": {
+            "task": "publishing.dispatch_queued_telegram_publications",
+            "schedule": telegram_interval_minutes * 60.0,
+        },
+    }
+
+
+CELERY_BEAT_SCHEDULE = build_celery_beat_schedule(
+    enabled=LEARNLOOT_AUTOMATION_ENABLED,
+    discovery_interval_minutes=LEARNLOOT_DISCOVERY_INTERVAL_MINUTES,
+    telegram_interval_minutes=LEARNLOOT_TELEGRAM_MAINTENANCE_INTERVAL_MINUTES,
+)
 
 # Provider discovery runtime configuration. Automated access remains disabled
 # until the operator explicitly acknowledges that the configured source may be
@@ -264,3 +386,43 @@ LEARNLOOT_OUTBOUND_CLICK_DEDUPE_SECONDS = env.int(
     "LEARNLOOT_OUTBOUND_CLICK_DEDUPE_SECONDS",
     default=2,
 )
+
+# Production-friendly logging defaults to stdout. Hosting/runtime layers remain
+# responsible for collection, rotation, retention, and alerting.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "learnloot": {
+            "format": "{asctime} {levelname} {name} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "learnloot",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": LEARNLOOT_LOG_LEVEL,
+    },
+    "loggers": {
+        "django.request": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "django.security": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "learnloot": {
+            "handlers": ["console"],
+            "level": LEARNLOOT_LOG_LEVEL,
+            "propagate": False,
+        },
+    },
+}

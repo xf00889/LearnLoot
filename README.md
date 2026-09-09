@@ -204,3 +204,36 @@ Uploaded CMS media is stored under `backend/media/` in local development and is
 served by Django only when `DEBUG` is enabled. Production deployment should use a
 persistent media volume/object store and a web server/CDN rather than Django's
 development media serving.
+
+## Phase 10 production readiness and operations
+
+Phase 10 adds fail-closed production configuration checks, liveness/readiness
+health endpoints, shared Redis-cache support, production security settings,
+stdout logging, scheduled Celery automation, operational status output, and
+PostgreSQL backup/verification commands. It does not change the Phase 9B public
+SEO/CMS routes or add a database migration.
+
+Local Windows development remains EnvKit-first. Production automation is
+explicitly disabled until `LEARNLOOT_AUTOMATION_ENABLED=true`, and only one
+Celery beat scheduler should run for the configured schedule.
+
+Before deployment, read `docs/PRODUCTION_RUNBOOK.md` and run:
+
+```powershell
+python backend\manage.py check --deploy
+python backend\manage.py production_check
+python backend\manage.py learnloot_status
+```
+
+Production click-dedupe must use a shared Redis cache through
+`LEARNLOOT_CACHE_URL`; the process-local cache remains a development fallback.
+CMS media must live on persistent storage and be backed up separately from
+PostgreSQL. The production check requires an explicit
+`LEARNLOOT_MEDIA_PERSISTENCE_CONFIRMED=true` acknowledgement after that storage
+and backup path is genuinely configured.
+
+Health probes are available at `/api/health/live/` and
+`/api/health/ready/`. The readiness endpoint returns HTTP 503 when the database is unavailable. A
+cache outage is reported as HTTP 200 with `status=degraded` because the public
+site can continue serving content while click-dedupe analytics are degraded. It
+never exposes credentials or raw exception details.
